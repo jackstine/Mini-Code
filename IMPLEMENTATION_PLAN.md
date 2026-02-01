@@ -757,3 +757,8 @@ Tools must be converted to Anthropic API format when registering with the harnes
 - **TypeScript Compiles:** Yes
 - **Tests Pass:** Yes (Go tests, TypeScript typecheck)
 - **Notes:** Implemented markdown rendering for TextPart component. Created tui/src/lib/markdown.tsx with parser and renderer. Supports: bold, italic, inline code, code blocks, headings, bullet lists, numbered lists, links.
+
+### 2026-02-01 - Add ThinkingBlock Support for Reasoning Events
+- **Errors:** None
+- **All Tests Pass:** Yes
+- **Notes:** Added OnReasoning method to EventHandler interface. Updated harness.go to emit reasoning events when ThinkingBlock is encountered. Updated SSE handler to broadcast reasoning events. Updated test mock to implement new interface method.

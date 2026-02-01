@@ -21,4 +21,8 @@ type EventHandler interface {
 	// result is the tool's output (or error message if isError is true).
 	// isError indicates whether the result represents an error.
 	OnToolResult(id string, result string, isError bool)
+
+	// OnReasoning is called when the agent produces a thinking/reasoning block.
+	// content contains the complete reasoning text.
+	OnReasoning(content string)
 }

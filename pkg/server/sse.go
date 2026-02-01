@@ -109,3 +109,8 @@ func (h *sseEventHandler) OnToolResult(id string, result string, isError bool) {
 	// Set status back to thinking after tool result
 	h.server.broadcast(Event{Type: "status", State: "thinking"})
 }
+
+// OnReasoning broadcasts a reasoning event.
+func (h *sseEventHandler) OnReasoning(content string) {
+	h.server.broadcast(Event{Type: "reasoning", Content: content})
+}

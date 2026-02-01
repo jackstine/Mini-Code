@@ -12,10 +12,11 @@ import (
 
 // MockEventHandler records all events for testing.
 type MockEventHandler struct {
-	mu          sync.Mutex
-	TextEvents  []string
-	ToolCalls   []struct{ ID, Name string; Input json.RawMessage }
-	ToolResults []struct{ ID, Result string; IsError bool }
+	mu              sync.Mutex
+	TextEvents      []string
+	ToolCalls       []struct{ ID, Name string; Input json.RawMessage }
+	ToolResults     []struct{ ID, Result string; IsError bool }
+	ReasoningEvents []string
 }
 
 func (h *MockEventHandler) OnText(text string) {
@@ -34,6 +35,12 @@ func (h *MockEventHandler) OnToolResult(id string, result string, isError bool) 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.ToolResults = append(h.ToolResults, struct{ ID, Result string; IsError bool }{id, result, isError})
+}
+
+func (h *MockEventHandler) OnReasoning(content string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.ReasoningEvents = append(h.ReasoningEvents, content)
 }
 
 // MockTool is a simple tool for testing.

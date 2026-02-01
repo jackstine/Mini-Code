@@ -210,6 +210,8 @@ func (h *Harness) emitBlockComplete(msg *anthropic.Message, index int64) {
 	case anthropic.ToolUseBlock:
 		inputJSON, _ := json.Marshal(b.Input)
 		h.handler.OnToolCall(b.ID, b.Name, inputJSON)
+	case anthropic.ThinkingBlock:
+		h.handler.OnReasoning(b.Thinking)
 	}
 }
 
