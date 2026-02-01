@@ -10,6 +10,7 @@ import { handleStatusEvent, setRunningTool, setIdle, status } from "./stores/sta
 import { cancelAgent } from "./lib/api"
 import { loadHistory } from "./lib/history"
 import { navigateHistoryUp, navigateHistoryDown, clearInput } from "./stores/input"
+import { scrollPageUp, scrollPageDown, scrollToTop, scrollToBottom } from "./stores/scroll"
 import { theme } from "./theme"
 import type { Event } from "./schemas/events"
 
@@ -101,6 +102,30 @@ export const App = () => {
     // Ctrl+U: Clear input
     if (key.ctrl && key.name === "u") {
       clearInput()
+      return
+    }
+
+    // PageUp: Scroll conversation up by one viewport
+    if (key.name === "pageup") {
+      scrollPageUp()
+      return
+    }
+
+    // PageDown: Scroll conversation down by one viewport
+    if (key.name === "pagedown") {
+      scrollPageDown()
+      return
+    }
+
+    // Home: Scroll to top of conversation
+    if (key.name === "home") {
+      scrollToTop()
+      return
+    }
+
+    // End: Scroll to bottom of conversation
+    if (key.name === "end") {
+      scrollToBottom()
       return
     }
   })

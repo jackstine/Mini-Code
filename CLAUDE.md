@@ -18,9 +18,9 @@ go run cmd/harness/main.go
 ### TUI (TypeScript)
 ```bash
 cd /Users/jake/Projects/harness/tui
-bun run build   # Build with Solid plugin
-bun run start   # Run the built app
-bun run dev     # Build and run
+/Users/jake/.bun/bin/bun run build   # Build with Solid plugin
+/Users/jake/.bun/bin/bun run start   # Run the built app
+/Users/jake/.bun/bin/bun run dev     # Build and run
 ```
 
 ### Testing
@@ -29,7 +29,7 @@ bun run dev     # Build and run
 go test ./...
 
 # TUI type checking
-cd tui && bun run typecheck
+cd tui && /Users/jake/.bun/bin/bun run typecheck
 ```
 
 

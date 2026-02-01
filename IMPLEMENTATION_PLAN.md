@@ -745,3 +745,9 @@ Tools must be converted to Anthropic API format when registering with the harnes
 - **TypeScript Compiles:** Yes, all code compiles and type checks
 - **TUI Renders:** Yes, renders correctly with OpenTUI
 - **Notes:** Implemented complete TypeScript TUI including project setup, communication layer (SSE/REST), state management (Solid.js stores), markdown renderer, all UI components (UserPart, TextPart, ToolPart, ReasoningPart, Conversation, InputBar, Status, Help), layout and theme, keybindings, and history persistence. Markdown rendering currently uses plain text - OpenTUI's markdown component requires SyntaxStyle which can be added in a future enhancement.
+
+### 2026-02-01 - Keyboard Scrolling Implementation
+- **Errors:** None
+- **TypeScript Compiles:** Yes
+- **Tests Pass:** Yes (Go tests, TypeScript typecheck)
+- **Notes:** Implemented keyboard scrolling (PageUp/PageDown/Home/End) per specs/scrolling.md. Created tui/src/stores/scroll.ts for scroll state management. Updated Conversation.tsx to expose scrollbox ref. Updated App.tsx with keyboard handlers for scroll navigation.
