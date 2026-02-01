@@ -1,3 +1,5 @@
 .env
-node_modeules/
-**/node_modeules/
+.dev.env
+node_modules/
+**/node_modules/
+.opencode
