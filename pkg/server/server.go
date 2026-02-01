@@ -8,14 +8,23 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/user/harness/pkg/harness"
+	"github.com/user/harness/pkg/log"
 )
+
+// UserPromptLogger is a callback for logging user prompts.
+type UserPromptLogger func(content string)
 
 // Server wraps a Harness and exposes it over HTTP.
 type Server struct {
 	harness *harness.Harness
 	addr    string
+	logger  log.Logger
+
+	// Optional callback to log user prompts for agent interaction logging
+	userPromptLogger UserPromptLogger
 
 	// SSE client management
 	mu      sync.RWMutex
@@ -30,10 +39,15 @@ type sseClient struct {
 }
 
 // NewServer creates a new HTTP server for the given harness.
-func NewServer(h *harness.Harness, addr string) *Server {
+// If logger is nil, a NopLogger is used.
+func NewServer(h *harness.Harness, addr string, logger log.Logger) *Server {
+	if logger == nil {
+		logger = log.NopLogger{}
+	}
 	return &Server{
 		harness: h,
 		addr:    addr,
+		logger:  logger,
 		clients: make(map[*sseClient]struct{}),
 	}
 }
@@ -69,18 +83,40 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 // HandlePrompt handles POST /prompt requests.
 func (s *Server) HandlePrompt(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	s.logger.Info("http", "Request received",
+		log.F("method", r.Method),
+		log.F("path", r.URL.Path),
+		log.F("content_length", r.ContentLength),
+	)
+
 	var req struct {
 		Content string `json:"content"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.logger.Warn("http", "Request validation failed",
+			log.F("method", r.Method),
+			log.F("path", r.URL.Path),
+			log.F("error", "invalid request body"),
+		)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	if req.Content == "" {
+		s.logger.Warn("http", "Request validation failed",
+			log.F("method", r.Method),
+			log.F("path", r.URL.Path),
+			log.F("error", "content is required"),
+		)
 		http.Error(w, "content is required", http.StatusBadRequest)
 		return
+	}
+
+	// Log user prompt to agent log if logger is set
+	if s.userPromptLogger != nil {
+		s.userPromptLogger(req.Content)
 	}
 
 	// Broadcast user message event before starting
@@ -104,17 +140,28 @@ func (s *Server) HandlePrompt(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	duration := time.Since(start)
+	s.logger.Info("http", "Response sent",
+		log.F("method", r.Method),
+		log.F("path", r.URL.Path),
+		log.F("status", http.StatusOK),
+		log.F("duration_ms", duration.Milliseconds()),
+	)
 	w.WriteHeader(http.StatusOK)
 }
 
 // HandleCancel handles POST /cancel requests.
 func (s *Server) HandleCancel(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info("http", "Cancel requested",
+		log.F("method", r.Method),
+		log.F("path", r.URL.Path),
+	)
 	s.harness.Cancel()
 	w.WriteHeader(http.StatusOK)
 }
 
-// addClient registers a new SSE client.
-func (s *Server) addClient() *sseClient {
+// addClient registers a new SSE client and returns it.
+func (s *Server) addClient(remoteAddr string) *sseClient {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.nextID++
@@ -123,18 +170,32 @@ func (s *Server) addClient() *sseClient {
 		events: make(chan []byte, 100), // Buffer to prevent blocking
 	}
 	s.clients[client] = struct{}{}
+	s.logger.Info("sse", "Client connected",
+		log.F("client_id", client.id),
+		log.F("remote_addr", remoteAddr),
+	)
 	return client
 }
 
 // removeClient unregisters an SSE client.
-func (s *Server) removeClient(client *sseClient) {
+func (s *Server) removeClient(client *sseClient, duration time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.clients, client)
 	close(client.events)
+	s.logger.Info("sse", "Client disconnected",
+		log.F("client_id", client.id),
+		log.F("duration_s", int(duration.Seconds())),
+	)
 }
 
 // EventHandler returns an EventHandler that broadcasts events to SSE clients.
 func (s *Server) EventHandler() harness.EventHandler {
 	return &sseEventHandler{server: s}
+}
+
+// SetUserPromptLogger sets a callback that will be called with user prompts
+// when they are submitted. This allows logging user prompts to the agent log.
+func (s *Server) SetUserPromptLogger(logger UserPromptLogger) {
+	s.userPromptLogger = logger
 }

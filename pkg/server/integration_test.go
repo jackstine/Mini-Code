@@ -116,7 +116,7 @@ func createTestServerWithCollector(t *testing.T, mockStreamer *testutil.MockMess
 		t.Fatalf("failed to create harness: %v", err)
 	}
 
-	s := server.NewServer(h, ":0")
+	s := server.NewServer(h, ":0", nil)
 	// Set the event handler
 	h.SetEventHandler(s.EventHandler())
 
@@ -251,7 +251,7 @@ func TestIntegration_MultipleConcurrentSSEClients(t *testing.T) {
 		t.Fatalf("failed to create harness: %v", err)
 	}
 
-	s := server.NewServer(h, ":0")
+	s := server.NewServer(h, ":0", nil)
 	h.SetEventHandler(s.EventHandler())
 
 	mux := http.NewServeMux()
@@ -879,7 +879,7 @@ func TestIntegration_ClientDisconnectReconnect(t *testing.T) {
 		t.Fatalf("failed to create harness: %v", err)
 	}
 
-	s := server.NewServer(h, ":0")
+	s := server.NewServer(h, ":0", nil)
 	h.SetEventHandler(s.EventHandler())
 
 	mux := http.NewServeMux()
@@ -1026,7 +1026,7 @@ func TestIntegration_HeartbeatMechanism(t *testing.T) {
 		t.Fatalf("failed to create harness: %v", err)
 	}
 
-	s := server.NewServer(h, ":0")
+	s := server.NewServer(h, ":0", nil)
 	h.SetEventHandler(s.EventHandler())
 
 	mux := http.NewServeMux()

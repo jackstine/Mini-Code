@@ -9,35 +9,39 @@ This plan covers the implementation of the logging system as defined in `specs/l
 
 ## Current State
 
-- No structured logging exists - only `log.Fatal()` for startup errors and `fmt.Printf()` for startup messages
-- The `EventHandler` interface already captures agent events (text, tool calls, tool results, reasoning)
-- Environment variable parsing exists for `HARNESS_MODEL`, `HARNESS_ADDR`, `HARNESS_SYSTEM_PROMPT`
+**Status: IMPLEMENTATION COMPLETE**
+
+The logging system is fully implemented:
+- `pkg/log/` - Logger package with config, server logger, agent logger, rotating writer, event handler wrapper
+- `pkg/server/` - HTTP and SSE logging integrated
+- `pkg/harness/` - API, tool, and loop logging integrated
+- `cmd/harness/main.go` - Logging initialization and configuration
 
 ## Acceptance Criteria
 
 ### Server Logging
-- [ ] Logs written to stderr with configurable level (DEBUG, INFO, WARN, ERROR)
-- [ ] Supports text and JSON output formats via `HARNESS_LOG_FORMAT`
-- [ ] Supports category filtering via `HARNESS_LOG_CATEGORIES` (http, sse, api, tool, harness)
-- [ ] Default level is INFO when `HARNESS_LOG_LEVEL` is unset
-- [ ] Log entries include: timestamp, level, category, message, and key-value fields
-- [ ] Sensitive data (API keys, tokens) are never logged or are redacted
-- [ ] Level check before expensive formatting operations (performance)
+- [x] Logs written to stderr with configurable level (DEBUG, INFO, WARN, ERROR)
+- [x] Supports text and JSON output formats via `HARNESS_LOG_FORMAT`
+- [x] Supports category filtering via `HARNESS_LOG_CATEGORIES` (http, sse, api, tool, harness)
+- [x] Default level is INFO when `HARNESS_LOG_LEVEL` is unset
+- [x] Log entries include: timestamp, level, category, message, and key-value fields
+- [x] Sensitive data (API keys, tokens) are never logged or are redacted
+- [x] Level check before expensive formatting operations (performance)
 
 ### Agent Interaction Logging
-- [ ] Logs written to file specified by `HARNESS_AGENT_LOG` (disabled if unset)
-- [ ] Supports text and JSON output formats via `HARNESS_AGENT_LOG_FORMAT`
-- [ ] Captures: user prompts, assistant responses, tool calls with inputs, tool results
-- [ ] Text format uses human-readable separator blocks (`=== TIMESTAMP TYPE ===`)
-- [ ] JSON format uses NDJSON (one JSON object per line)
-- [ ] File rotation: 10MB max size, 5 max files, timestamp suffix on rotated files
+- [x] Logs written to file specified by `HARNESS_AGENT_LOG` (disabled if unset)
+- [x] Supports text and JSON output formats via `HARNESS_AGENT_LOG_FORMAT`
+- [x] Captures: user prompts, assistant responses, tool calls with inputs, tool results
+- [x] Text format uses human-readable separator blocks (`=== TIMESTAMP TYPE ===`)
+- [x] JSON format uses NDJSON (one JSON object per line)
+- [x] File rotation: 10MB max size, 5 max files, timestamp suffix on rotated files
 
 ### Integration Points
-- [ ] HTTP requests logged with method, path, status, duration
-- [ ] SSE client connect/disconnect logged with client_id
-- [ ] API requests logged with model, message count, token counts, duration
-- [ ] Tool execution logged with tool name, id, duration, success/failure
-- [ ] Agent loop logged with turn count, total duration
+- [x] HTTP requests logged with method, path, status, duration
+- [x] SSE client connect/disconnect logged with client_id
+- [x] API requests logged with model, message count, token counts, duration
+- [x] Tool execution logged with tool name, id, duration, success/failure
+- [x] Agent loop logged with turn count, total duration
 
 ---
 
@@ -402,3 +406,22 @@ Agent logger tests should:
 - Log aggregation or shipping
 - Log searching/filtering tools
 - Metrics or tracing integration
+
+---
+
+## Logs
+
+### Log Entry - 2026-02-01 - Logger Package Foundation
+- **Errors:** None
+- **All Tests Pass:** Yes
+- **Notes:** Created `pkg/log/` package with Logger, AgentLogger, config, rotating writer, and LoggingEventHandler. All unit tests passing.
+
+### Log Entry - 2026-02-01 - Server and Main Integration
+- **Errors:** None
+- **All Tests Pass:** Yes
+- **Notes:** Integrated logging into `pkg/server/` (HTTP and SSE logging) and `cmd/harness/main.go`. Server now accepts Logger parameter. LoggingEventHandler wraps SSE handler for agent interaction logging. User prompts logged via SetUserPromptLogger callback.
+
+### Log Entry - 2026-02-01 - Harness-level Logging (API, Tool, Loop)
+- **Errors:** None
+- **All Tests Pass:** Yes
+- **Notes:** Added logging to `pkg/harness/harness.go` for API requests/responses, tool execution (start/complete/fail/slow), and agent loop (start/complete/turn). Harness now has SetLogger method. Slow tool execution (>5s) logged as warning.

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/user/harness/pkg/log"
 	"github.com/user/harness/pkg/tool"
 )
 
@@ -22,6 +24,7 @@ type Harness struct {
 	tools      map[string]tool.Tool
 	toolParams []anthropic.ToolUnionParam
 	handler    EventHandler
+	logger     log.Logger
 	messages   []anthropic.MessageParam
 
 	// Concurrency control
@@ -55,6 +58,7 @@ func NewHarness(config Config, tools []tool.Tool, handler EventHandler) (*Harnes
 		tools:      toolMap,
 		toolParams: toolParams,
 		handler:    handler,
+		logger:     log.NopLogger{},
 		messages:   []anthropic.MessageParam{},
 	}, nil
 }
@@ -92,6 +96,7 @@ func NewHarnessWithStreamer(config Config, tools []tool.Tool, handler EventHandl
 		tools:      toolMap,
 		toolParams: toolParams,
 		handler:    handler,
+		logger:     log.NopLogger{},
 		messages:   []anthropic.MessageParam{},
 	}, nil
 }
@@ -141,6 +146,11 @@ func (h *Harness) Prompt(ctx context.Context, content string) error {
 	h.runningCtx = promptCtx
 	h.mu.Unlock()
 
+	loopStart := time.Now()
+	h.logger.Info("harness", "Agent loop started",
+		log.F("prompt_length", len(content)),
+	)
+
 	defer func() {
 		h.mu.Lock()
 		h.running = false
@@ -153,7 +163,21 @@ func (h *Harness) Prompt(ctx context.Context, content string) error {
 	h.messages = append(h.messages, anthropic.NewUserMessage(anthropic.NewTextBlock(content)))
 
 	// Run the agent loop
-	return h.runAgentLoop(promptCtx)
+	err := h.runAgentLoop(promptCtx)
+
+	duration := time.Since(loopStart)
+	if err != nil {
+		h.logger.Error("harness", "Agent loop failed",
+			log.F("error", err.Error()),
+			log.F("total_duration_ms", duration.Milliseconds()),
+		)
+	} else {
+		h.logger.Info("harness", "Agent loop completed",
+			log.F("total_duration_ms", duration.Milliseconds()),
+		)
+	}
+
+	return err
 }
 
 // Cancel cancels the currently running prompt, if any.
@@ -194,6 +218,14 @@ func (h *Harness) runAgentLoop(ctx context.Context) error {
 			systemBlocks = []anthropic.TextBlockParam{{Text: h.config.SystemPrompt}}
 		}
 
+		// Log API request
+		h.logger.Info("api", "Request sent",
+			log.F("model", h.config.Model),
+			log.F("messages", len(h.messages)),
+			log.F("tools", len(h.toolParams)),
+		)
+		apiStart := time.Now()
+
 		// Create streaming request
 		stream := h.streamer.NewStreaming(ctx, anthropic.MessageNewParams{
 			Model:     anthropic.Model(h.config.Model),
@@ -218,8 +250,22 @@ func (h *Harness) runAgentLoop(ctx context.Context) error {
 			}
 		}
 		if stream.Err() != nil {
+			apiDuration := time.Since(apiStart)
+			h.logger.Error("api", "Request failed",
+				log.F("model", h.config.Model),
+				log.F("error", stream.Err().Error()),
+				log.F("duration_ms", apiDuration.Milliseconds()),
+			)
 			return stream.Err()
 		}
+
+		// Log API response
+		apiDuration := time.Since(apiStart)
+		h.logger.Info("api", "Response received",
+			log.F("input_tokens", message.Usage.InputTokens),
+			log.F("output_tokens", message.Usage.OutputTokens),
+			log.F("duration_ms", apiDuration.Milliseconds()),
+		)
 
 		// Append assistant message to history
 		h.messages = append(h.messages, message.ToParam())
@@ -229,6 +275,12 @@ func (h *Harness) runAgentLoop(ctx context.Context) error {
 		if len(toolCalls) == 0 {
 			return nil // No tool calls = done
 		}
+
+		// Log turn completion at debug level
+		h.logger.Debug("harness", "Turn completed",
+			log.F("turn", turn+1),
+			log.F("tool_calls", len(toolCalls)),
+		)
 
 		// Execute tools sequentially with fail-fast
 		toolResults, err := h.executeTools(ctx, toolCalls)
@@ -284,6 +336,8 @@ func (h *Harness) extractToolCalls(msg *anthropic.Message) []ToolCall {
 // executeTools executes tools sequentially with fail-fast behavior.
 // Returns tool result blocks and an error if context was cancelled.
 func (h *Harness) executeTools(ctx context.Context, calls []ToolCall) ([]anthropic.ContentBlockParamUnion, error) {
+	const slowToolThreshold = 5 * time.Second
+
 	var results []anthropic.ContentBlockParamUnion
 	for _, call := range calls {
 		// Check context before each tool execution
@@ -293,11 +347,52 @@ func (h *Harness) executeTools(ctx context.Context, calls []ToolCall) ([]anthrop
 		default:
 		}
 
+		h.logger.Info("tool", "Execution started",
+			log.F("tool", call.Name),
+			log.F("id", call.ID),
+		)
+		if h.logger.IsDebugEnabled() {
+			h.logger.Debug("tool", "Tool input",
+				log.F("tool", call.Name),
+				log.F("id", call.ID),
+				log.F("input", string(call.Input)),
+			)
+		}
+
+		toolStart := time.Now()
 		result, err := h.executeTool(ctx, call)
+		toolDuration := time.Since(toolStart)
+
 		isError := err != nil
 		resultStr := result
 		if isError {
 			resultStr = err.Error()
+		}
+
+		// Log tool completion
+		if isError {
+			h.logger.Error("tool", "Execution failed",
+				log.F("tool", call.Name),
+				log.F("id", call.ID),
+				log.F("error", resultStr),
+				log.F("duration_ms", toolDuration.Milliseconds()),
+			)
+		} else {
+			h.logger.Info("tool", "Execution completed",
+				log.F("tool", call.Name),
+				log.F("id", call.ID),
+				log.F("duration_ms", toolDuration.Milliseconds()),
+				log.F("success", true),
+			)
+		}
+
+		// Warn on slow execution
+		if toolDuration > slowToolThreshold {
+			h.logger.Warn("tool", "Slow execution",
+				log.F("tool", call.Name),
+				log.F("id", call.ID),
+				log.F("duration_ms", toolDuration.Milliseconds()),
+			)
 		}
 
 		// Emit tool result event
@@ -342,4 +437,15 @@ func (h *Harness) SetEventHandler(handler EventHandler) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.handler = handler
+}
+
+// SetLogger sets the logger for the harness.
+// If nil is passed, a NopLogger is used.
+func (h *Harness) SetLogger(logger log.Logger) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if logger == nil {
+		logger = log.NopLogger{}
+	}
+	h.logger = logger
 }

@@ -44,7 +44,7 @@ func createTestHarness(t *testing.T) *harness.Harness {
 
 func TestNewServer(t *testing.T) {
 	h := createTestHarness(t)
-	s := NewServer(h, ":8080")
+	s := NewServer(h, ":8080", nil)
 	if s == nil {
 		t.Fatal("expected server to be non-nil")
 	}
@@ -58,7 +58,7 @@ func TestNewServer(t *testing.T) {
 
 func TestServer_HandlePrompt_EmptyContent(t *testing.T) {
 	h := createTestHarness(t)
-	s := NewServer(h, ":8080")
+	s := NewServer(h, ":8080", nil)
 
 	// Create request with empty content
 	body := bytes.NewBufferString(`{"content":""}`)
@@ -75,7 +75,7 @@ func TestServer_HandlePrompt_EmptyContent(t *testing.T) {
 
 func TestServer_HandlePrompt_InvalidJSON(t *testing.T) {
 	h := createTestHarness(t)
-	s := NewServer(h, ":8080")
+	s := NewServer(h, ":8080", nil)
 
 	body := bytes.NewBufferString(`invalid json`)
 	req := httptest.NewRequest("POST", "/prompt", body)
@@ -91,7 +91,7 @@ func TestServer_HandlePrompt_InvalidJSON(t *testing.T) {
 
 func TestServer_HandleCancel(t *testing.T) {
 	h := createTestHarness(t)
-	s := NewServer(h, ":8080")
+	s := NewServer(h, ":8080", nil)
 
 	req := httptest.NewRequest("POST", "/cancel", nil)
 	rec := httptest.NewRecorder()
@@ -105,10 +105,10 @@ func TestServer_HandleCancel(t *testing.T) {
 
 func TestServer_SSEClientManagement(t *testing.T) {
 	h := createTestHarness(t)
-	s := NewServer(h, ":8080")
+	s := NewServer(h, ":8080", nil)
 
 	// Add a client
-	client := s.addClient()
+	client := s.addClient("test:1234")
 	if client == nil {
 		t.Fatal("expected client to be non-nil")
 	}
@@ -124,13 +124,13 @@ func TestServer_SSEClientManagement(t *testing.T) {
 	s.mu.RUnlock()
 
 	// Add another client
-	client2 := s.addClient()
+	client2 := s.addClient("test:1234")
 	if client2.id != 2 {
 		t.Errorf("expected client id 2, got %d", client2.id)
 	}
 
 	// Remove first client
-	s.removeClient(client)
+	s.removeClient(client, 0)
 
 	// Verify first client is unregistered
 	s.mu.RLock()
@@ -144,16 +144,16 @@ func TestServer_SSEClientManagement(t *testing.T) {
 	s.mu.RUnlock()
 
 	// Clean up
-	s.removeClient(client2)
+	s.removeClient(client2, 0)
 }
 
 func TestServer_Broadcast(t *testing.T) {
 	h := createTestHarness(t)
-	s := NewServer(h, ":8080")
+	s := NewServer(h, ":8080", nil)
 
 	// Add a client
-	client := s.addClient()
-	defer s.removeClient(client)
+	client := s.addClient("test:1234")
+	defer s.removeClient(client, 0)
 
 	// Broadcast an event
 	event := Event{Type: "text", Content: "hello world"}
@@ -182,13 +182,13 @@ func TestServer_Broadcast(t *testing.T) {
 
 func TestServer_BroadcastToMultipleClients(t *testing.T) {
 	h := createTestHarness(t)
-	s := NewServer(h, ":8080")
+	s := NewServer(h, ":8080", nil)
 
 	// Add multiple clients
-	client1 := s.addClient()
-	client2 := s.addClient()
-	defer s.removeClient(client1)
-	defer s.removeClient(client2)
+	client1 := s.addClient("test:1234")
+	client2 := s.addClient("test:1234")
+	defer s.removeClient(client1, 0)
+	defer s.removeClient(client2, 0)
 
 	// Broadcast an event
 	event := Event{Type: "text", Content: "broadcast test"}
@@ -213,12 +213,12 @@ func TestServer_BroadcastToMultipleClients(t *testing.T) {
 
 func TestSSEEventHandler(t *testing.T) {
 	h := createTestHarness(t)
-	s := NewServer(h, ":8080")
+	s := NewServer(h, ":8080", nil)
 	handler := s.EventHandler()
 
 	// Add a client to receive events
-	client := s.addClient()
-	defer s.removeClient(client)
+	client := s.addClient("test:1234")
+	defer s.removeClient(client, 0)
 
 	// Test OnText
 	handler.OnText("test text")
@@ -315,7 +315,7 @@ func TestSSEEventHandler(t *testing.T) {
 
 func TestServer_HandleSSE(t *testing.T) {
 	h := createTestHarness(t)
-	s := NewServer(h, ":8080")
+	s := NewServer(h, ":8080", nil)
 
 	// Create a request with cancellable context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -360,7 +360,7 @@ func TestServer_HandleSSE(t *testing.T) {
 
 func TestCORSMiddleware(t *testing.T) {
 	h := createTestHarness(t)
-	s := NewServer(h, ":8080")
+	s := NewServer(h, ":8080", nil)
 
 	// Create test handler
 	handler := corsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

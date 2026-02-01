@@ -31,6 +31,8 @@ type Event struct {
 
 // HandleSSE handles GET /events SSE connections.
 func (s *Server) HandleSSE(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -43,8 +45,10 @@ func (s *Server) HandleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Register this client
-	client := s.addClient()
-	defer s.removeClient(client)
+	client := s.addClient(r.RemoteAddr)
+	defer func() {
+		s.removeClient(client, time.Since(start))
+	}()
 
 	// Send initial connection comment to establish the stream
 	// This allows HTTP clients to know the connection is established

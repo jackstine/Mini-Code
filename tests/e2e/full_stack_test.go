@@ -210,7 +210,7 @@ func newTestServer(t *testing.T, h *harness.Harness) *testServer {
 	addr := listener.Addr().String()
 	url := "http://" + addr
 
-	s := server.NewServer(h, addr)
+	s := server.NewServer(h, addr, nil)
 	h.SetEventHandler(s.EventHandler())
 
 	ts := &testServer{
