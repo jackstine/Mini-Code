@@ -4,6 +4,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sync"
@@ -40,9 +41,9 @@ func NewServer(h *harness.Harness, addr string) *Server {
 // ListenAndServe starts the HTTP server and blocks until it's shut down.
 func (s *Server) ListenAndServe() error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /events", s.handleSSE)
-	mux.HandleFunc("POST /prompt", s.handlePrompt)
-	mux.HandleFunc("POST /cancel", s.handleCancel)
+	mux.HandleFunc("GET /events", s.HandleSSE)
+	mux.HandleFunc("POST /prompt", s.HandlePrompt)
+	mux.HandleFunc("POST /cancel", s.HandleCancel)
 
 	// Add CORS headers middleware
 	handler := corsMiddleware(mux)
@@ -66,8 +67,8 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// handlePrompt handles POST /prompt requests.
-func (s *Server) handlePrompt(w http.ResponseWriter, r *http.Request) {
+// HandlePrompt handles POST /prompt requests.
+func (s *Server) HandlePrompt(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Content string `json:"content"`
 	}
@@ -86,11 +87,14 @@ func (s *Server) handlePrompt(w http.ResponseWriter, r *http.Request) {
 	s.broadcast(Event{Type: "user", Content: req.Content})
 
 	// Run prompt asynchronously
+	// Note: We use context.Background() here because the prompt runs independently
+	// of the HTTP request lifecycle. The harness has its own Cancel() method for
+	// explicit cancellation via the /cancel endpoint.
 	go func() {
 		// Broadcast status: thinking
 		s.broadcast(Event{Type: "status", State: "thinking"})
 
-		err := s.harness.Prompt(r.Context(), req.Content)
+		err := s.harness.Prompt(context.Background(), req.Content)
 		if err != nil {
 			// Broadcast error status
 			s.broadcast(Event{Type: "status", State: "error", Message: err.Error()})
@@ -103,8 +107,8 @@ func (s *Server) handlePrompt(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleCancel handles POST /cancel requests.
-func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request) {
+// HandleCancel handles POST /cancel requests.
+func (s *Server) HandleCancel(w http.ResponseWriter, r *http.Request) {
 	s.harness.Cancel()
 	w.WriteHeader(http.StatusOK)
 }

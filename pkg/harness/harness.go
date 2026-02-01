@@ -323,3 +323,11 @@ func (h *Harness) Messages() []anthropic.MessageParam {
 	copy(msgs, h.messages)
 	return msgs
 }
+
+// SetEventHandler sets or replaces the event handler.
+// This is useful for integration testing where the handler needs to be set after construction.
+func (h *Harness) SetEventHandler(handler EventHandler) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.handler = handler
+}

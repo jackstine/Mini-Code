@@ -29,8 +29,8 @@ type Event struct {
 	Message string `json:"message,omitempty"`
 }
 
-// handleSSE handles GET /events SSE connections.
-func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
+// HandleSSE handles GET /events SSE connections.
+func (s *Server) HandleSSE(w http.ResponseWriter, r *http.Request) {
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -45,6 +45,11 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// Register this client
 	client := s.addClient()
 	defer s.removeClient(client)
+
+	// Send initial connection comment to establish the stream
+	// This allows HTTP clients to know the connection is established
+	fmt.Fprintf(w, ": connected\n\n")
+	flusher.Flush()
 
 	// Heartbeat ticker - 30 seconds
 	heartbeat := time.NewTicker(30 * time.Second)

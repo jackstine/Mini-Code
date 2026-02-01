@@ -721,13 +721,13 @@ Mixed:                OnText → OnToolCall → OnToolResult → OnReasoning (in
 **Why:** Verify the complete HTTP request/response cycle including SSE streaming, event broadcasting, and REST endpoints work together.
 
 **Tasks:**
-- [ ] Create `pkg/server/integration_test.go`
-- [ ] Test POST /prompt → SSE event flow
-- [ ] Test multiple concurrent SSE clients
-- [ ] Test POST /cancel during execution
-- [ ] Test event ordering and timing
-- [ ] Test heartbeat mechanism
-- [ ] Test error status broadcasting
+- [x] Create `pkg/server/integration_test.go`
+- [x] Test POST /prompt → SSE event flow
+- [x] Test multiple concurrent SSE clients
+- [x] Test POST /cancel during execution
+- [x] Test event ordering and timing
+- [x] Test heartbeat mechanism
+- [x] Test error status broadcasting
 
 **Test Scenarios:**
 
@@ -1083,3 +1083,8 @@ Tools must be converted to Anthropic API format when registering with the harnes
 - **Errors:** None
 - **All Tests Pass:** Yes (97 tests total)
 - **Notes:** Implemented mock Anthropic client (pkg/testutil/mock_anthropic.go) with proper JSON-based event generation for SDK Accumulate compatibility. Added 8 integration tests covering text-only response, single tool call, fail-fast behavior, MaxTurns enforcement, thinking blocks, context cancellation, stream errors, and conversation history. Added 11 tests for testutil package. Total test count increased from 71 to 97.
+
+### 2026-02-01 - Phase 3 HTTP Flow Integration Tests
+- **Errors:** None
+- **All Tests Pass:** Yes (109 tests total)
+- **Notes:** Created pkg/server/integration_test.go with 13 integration tests covering: POST /prompt → SSE event flow, multiple concurrent SSE clients, POST /cancel during execution, tool call event sequence, error status broadcast, status transitions, prompt while busy, empty/invalid content rejection, reasoning events, multiple tool calls, client disconnect/reconnect, and heartbeat mechanism. Fixed server bug where HandlePrompt used r.Context() which got cancelled immediately (changed to context.Background()). Added initial SSE connection comment (": connected\n\n") to establish the stream. Exported handler methods (HandleSSE, HandlePrompt, HandleCancel) and added SetEventHandler method to harness.

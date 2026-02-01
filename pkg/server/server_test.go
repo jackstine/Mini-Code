@@ -66,7 +66,7 @@ func TestServer_HandlePrompt_EmptyContent(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	s.handlePrompt(rec, req)
+	s.HandlePrompt(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected status 400, got %d", rec.Code)
@@ -82,7 +82,7 @@ func TestServer_HandlePrompt_InvalidJSON(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	s.handlePrompt(rec, req)
+	s.HandlePrompt(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected status 400, got %d", rec.Code)
@@ -96,7 +96,7 @@ func TestServer_HandleCancel(t *testing.T) {
 	req := httptest.NewRequest("POST", "/cancel", nil)
 	rec := httptest.NewRecorder()
 
-	s.handleCancel(rec, req)
+	s.HandleCancel(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", rec.Code)
@@ -327,7 +327,7 @@ func TestServer_HandleSSE(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s.handleSSE(rec, req)
+		s.HandleSSE(rec, req)
 	}()
 
 	// Give handler time to start
