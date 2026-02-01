@@ -17,7 +17,7 @@ var ErrPromptInProgress = errors.New("another prompt is already in progress")
 // Harness orchestrates the AI agent loop, connecting the Anthropic API
 // with tools and event handling.
 type Harness struct {
-	client     anthropic.Client
+	streamer   MessageStreamer
 	config     Config
 	tools      map[string]tool.Tool
 	toolParams []anthropic.ToolUnionParam
@@ -50,7 +50,44 @@ func NewHarness(config Config, tools []tool.Tool, handler EventHandler) (*Harnes
 	}
 
 	return &Harness{
-		client:     client,
+		streamer:   &realMessageStreamer{client: client},
+		config:     config,
+		tools:      toolMap,
+		toolParams: toolParams,
+		handler:    handler,
+		messages:   []anthropic.MessageParam{},
+	}, nil
+}
+
+// NewHarnessWithStreamer creates a new Harness with a custom MessageStreamer.
+// This is intended for testing, allowing injection of mock streamers.
+func NewHarnessWithStreamer(config Config, tools []tool.Tool, handler EventHandler, streamer MessageStreamer) (*Harness, error) {
+	// Skip API key validation for testing when using mock streamer
+	if streamer == nil {
+		return nil, errors.New("streamer cannot be nil")
+	}
+
+	// Apply defaults
+	if config.Model == "" {
+		config.Model = "claude-3-haiku-20240307"
+	}
+	if config.MaxTokens == 0 {
+		config.MaxTokens = 4096
+	}
+	if config.MaxTurns == 0 {
+		config.MaxTurns = 10
+	}
+
+	// Convert tools to API format and build lookup map
+	toolParams := make([]anthropic.ToolUnionParam, len(tools))
+	toolMap := make(map[string]tool.Tool)
+	for i, t := range tools {
+		toolParams[i] = toolToParam(t)
+		toolMap[t.Name()] = t
+	}
+
+	return &Harness{
+		streamer:   streamer,
 		config:     config,
 		tools:      toolMap,
 		toolParams: toolParams,
@@ -146,7 +183,7 @@ func (h *Harness) runAgentLoop(ctx context.Context) error {
 		}
 
 		// Create streaming request
-		stream := h.client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
+		stream := h.streamer.NewStreaming(ctx, anthropic.MessageNewParams{
 			Model:     anthropic.Model(h.config.Model),
 			MaxTokens: int64(h.config.MaxTokens),
 			System:    systemBlocks,
