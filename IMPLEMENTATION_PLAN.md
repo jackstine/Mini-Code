@@ -605,6 +605,263 @@ This document outlines the implementation plan for the Harness system - an AI ag
 
 ---
 
+### Phase 3: Integration Tests
+
+**Why:** Unit tests verify individual components work correctly in isolation. Integration tests verify components work together correctly, catching issues that only emerge when systems interact.
+
+#### Current Test Coverage
+
+| Category | Unit Tests | Integration Tests |
+|----------|------------|-------------------|
+| Tools (read/list_dir/grep) | ✅ 43 tests | ❌ None |
+| Config/Harness | ✅ 19 tests | ❌ None |
+| Server/SSE | ✅ 11 tests | ❌ None |
+| Agent Loop | ❌ None | ❌ None |
+| **Total** | **71 tests** | **0 tests** |
+
+**Critical Gap:** No Anthropic SDK mocking exists - the agent loop cannot be tested without calling the real API.
+
+---
+
+#### 3.1 Mock Anthropic Client
+
+**Why:** The agent loop requires streaming responses from the Anthropic API. Without a mock client, we cannot test the complete agent loop, event emission, or tool execution chains without making real API calls.
+
+**Tasks:**
+- [ ] Create mock Anthropic client in `pkg/testutil/mock_anthropic.go`
+- [ ] Implement mock streaming response generator
+- [ ] Support configurable response sequences (text, tool calls, thinking blocks)
+- [ ] Support error injection for testing error paths
+
+**Mock Client Requirements:**
+- Implement same interface pattern as real `anthropic.Client`
+- Generate realistic `ContentBlockStopEvent` sequences
+- Support multi-turn conversations with tool results
+- Allow configuration of:
+  - Response content (text blocks, tool use blocks, thinking blocks)
+  - Stop reasons (end_turn, tool_use, max_tokens)
+  - Errors (network, rate limit, invalid request)
+
+**Test Fixtures to Create:**
+```
+pkg/testutil/
+├── mock_anthropic.go          # Mock client implementation
+├── fixtures/
+│   ├── text_only.go           # Single text response
+│   ├── single_tool.go         # One tool call response
+│   ├── multi_tool.go          # Multiple tool calls
+│   ├── tool_chain.go          # Multi-turn tool chain
+│   ├── thinking_block.go      # Response with reasoning
+│   └── error_responses.go     # Various error scenarios
+└── streaming.go               # Streaming event generator
+```
+
+**Acceptance Criteria:**
+| Requirement | Verification |
+|-------------|--------------|
+| Mock compiles | `go build ./pkg/testutil/...` succeeds |
+| Streaming works | Mock generates proper event sequences |
+| Configurable | Can specify exact response content |
+| Error injection | Can simulate API errors |
+
+---
+
+#### 3.2 Agent Loop Integration Tests
+
+**Why:** The agent loop is the core algorithm. Integration tests verify streaming, event emission, tool execution, and termination conditions work together correctly.
+
+**Tasks:**
+- [ ] Create `pkg/harness/integration_test.go`
+- [ ] Test text-only response flow
+- [ ] Test single tool call execution
+- [ ] Test multiple sequential tool calls
+- [ ] Test tool chain (multi-turn with tool results)
+- [ ] Test fail-fast behavior on tool error
+- [ ] Test MaxTurns enforcement
+- [ ] Test context cancellation scenarios
+- [ ] Test event emission sequence
+
+**Test Matrix:**
+
+| Test Case | Mock Response | Expected Behavior |
+|-----------|---------------|-------------------|
+| Text-only response | Single text block | Loop terminates after 1 turn, OnText called once |
+| Single tool call | Tool use block | Tool executes, OnToolCall + OnToolResult, loop continues |
+| Multiple tool calls | 2+ tool use blocks | All tools execute sequentially |
+| Tool chain (2 turns) | Turn 1: tool, Turn 2: text | 2 API calls, proper message history |
+| First tool error | Tool use block | Fail-fast, error in OnToolResult, sent to agent |
+| MaxTurns = 2 | Always returns tools | Loop stops after 2 turns |
+| Context cancelled | Any | Returns context.Canceled |
+| Thinking block | ThinkingBlock content | OnReasoning called with content |
+| Mixed blocks | Text + tool + thinking | All events emitted in order |
+
+**Event Sequence Verification:**
+```
+Text Response:        OnText(content)
+Tool Response:        OnToolCall(id, name, input) → [execute] → OnToolResult(id, result, false)
+Error Response:       OnToolCall(...) → [execute fails] → OnToolResult(id, error, true)
+Thinking Response:    OnReasoning(content)
+Mixed:                OnText → OnToolCall → OnToolResult → OnReasoning (in block order)
+```
+
+**Acceptance Criteria:**
+| Requirement | Verification |
+|-------------|--------------|
+| All scenarios pass | `go test ./pkg/harness/... -run Integration` |
+| Event order correct | Mock handler records sequence |
+| Tool results in history | Messages contain tool results |
+| Fail-fast works | Second tool not executed on first error |
+| MaxTurns enforced | Loop exits at limit |
+
+---
+
+#### 3.3 HTTP Flow Integration Tests
+
+**Why:** Verify the complete HTTP request/response cycle including SSE streaming, event broadcasting, and REST endpoints work together.
+
+**Tasks:**
+- [ ] Create `pkg/server/integration_test.go`
+- [ ] Test POST /prompt → SSE event flow
+- [ ] Test multiple concurrent SSE clients
+- [ ] Test POST /cancel during execution
+- [ ] Test event ordering and timing
+- [ ] Test heartbeat mechanism
+- [ ] Test error status broadcasting
+
+**Test Scenarios:**
+
+| Test Case | Setup | Verification |
+|-----------|-------|--------------|
+| Prompt → Events | POST /prompt, listen SSE | Receive user, status, text/tool events, final status |
+| Multiple clients | 3 SSE connections | All receive same events |
+| Cancel mid-execution | POST /prompt, then /cancel | Execution stops, status event sent |
+| Heartbeat | Connect SSE, wait 35s | Receive `: heartbeat\n` comment |
+| Error propagation | Trigger harness error | Status event with error state |
+| Client disconnect | Connect, disconnect, reconnect | No crash, new client receives events |
+
+**SSE Event Flow Verification:**
+```
+POST /prompt {"content": "test"}
+  ↓
+SSE receives:
+  1. {"type": "user", "content": "test", "timestamp": ...}
+  2. {"type": "status", "state": "thinking", ...}
+  3. {"type": "text", "content": "...", ...}  (or tool events)
+  4. {"type": "status", "state": "idle", ...}
+```
+
+**Acceptance Criteria:**
+| Requirement | Verification |
+|-------------|--------------|
+| Event delivery | All connected clients receive all events |
+| Event ordering | Events arrive in correct sequence |
+| Heartbeat works | Comment sent every 30 seconds |
+| Cancel works | Stops execution, sends status |
+| Error handling | Errors broadcast as status events |
+
+---
+
+#### 3.4 Tool Execution Integration Tests
+
+**Why:** Verify tools execute correctly when called through the harness (not directly), including input validation, context propagation, and result formatting.
+
+**Tasks:**
+- [ ] Create `pkg/harness/tool_integration_test.go`
+- [ ] Test READ tool via harness
+- [ ] Test LIST_DIR tool via harness
+- [ ] Test GREP tool via harness
+- [ ] Test tool input validation through harness
+- [ ] Test context cancellation during tool execution
+- [ ] Test unknown tool handling
+
+**Test Matrix:**
+
+| Test Case | Tool | Input | Expected |
+|-----------|------|-------|----------|
+| Read file | READ | `{"path": "test.txt"}` | Content in tool result |
+| Read error | READ | `{"path": "nonexistent"}` | Error in tool result |
+| List dir | LIST_DIR | `{"path": "/tmp"}` | Entries in tool result |
+| Grep match | GREP | `{"pattern": "foo", "path": "test.txt"}` | Matches in result |
+| Unknown tool | (none) | Any | Error result, loop continues |
+| Context cancel | Any | Valid | Tool execution stops |
+
+**Acceptance Criteria:**
+| Requirement | Verification |
+|-------------|--------------|
+| Tools execute correctly | Results match direct execution |
+| Input validated | Invalid inputs produce errors |
+| Context propagated | Cancellation stops tools |
+| Results formatted | JSON format with content/error |
+
+---
+
+#### 3.5 Full Stack Integration Tests
+
+**Why:** End-to-end tests verify the complete system works from TUI through server to harness and back.
+
+**Tasks:**
+- [ ] Create `tests/e2e/` directory for full stack tests
+- [ ] Test complete prompt → response flow
+- [ ] Test tool execution visibility in events
+- [ ] Test error handling end-to-end
+- [ ] Test concurrent operations
+
+**Note:** Full stack tests require either:
+1. Running TUI in test mode (headless)
+2. Using HTTP client to simulate TUI
+3. Manual testing checklist
+
+**Manual Testing Checklist:**
+- [ ] Start server with `go run cmd/harness/main.go`
+- [ ] Start TUI with `cd tui && bun run dev`
+- [ ] Submit prompt, verify response appears
+- [ ] Verify tool calls show name, input, result
+- [ ] Press Ctrl+C during execution, verify cancellation
+- [ ] Verify auto-scroll behavior
+- [ ] Verify keyboard navigation works
+- [ ] Verify history persistence across restarts
+
+---
+
+#### Integration Test File Structure
+
+```
+pkg/
+├── testutil/
+│   ├── mock_anthropic.go        # Mock Anthropic client
+│   ├── streaming.go             # Streaming event generator
+│   └── fixtures/
+│       ├── text_only.go
+│       ├── single_tool.go
+│       ├── multi_tool.go
+│       ├── tool_chain.go
+│       ├── thinking_block.go
+│       └── error_responses.go
+├── harness/
+│   ├── integration_test.go      # Agent loop integration tests
+│   └── tool_integration_test.go # Tool execution via harness
+└── server/
+    └── integration_test.go      # HTTP/SSE flow tests
+
+tests/
+└── e2e/
+    └── full_stack_test.go       # End-to-end tests (optional)
+```
+
+---
+
+#### Integration Test Priority
+
+| Priority | Test Suite | Why |
+|----------|------------|-----|
+| **P0** | Mock Anthropic Client | Prerequisite for all other integration tests |
+| **P1** | Agent Loop Integration | Core algorithm, most complex, highest risk |
+| **P1** | HTTP Flow Integration | Critical path for TUI communication |
+| **P2** | Tool Execution Integration | Lower risk, good unit test coverage exists |
+| **P3** | Full Stack E2E | Manual testing sufficient initially |
+
+---
+
 ## File Structure
 
 ```
@@ -772,3 +1029,8 @@ Tools must be converted to Anthropic API format when registering with the harnes
 - **Errors:** None
 - **All Tests Pass:** Yes (Go tests + TypeScript typecheck)
 - **Notes:** Verified all 81 spec items across harness.md, tui.md, scrolling.md, and tools/*.md are fully implemented. No gaps remaining. Implementation is complete.
+
+### 2026-02-01 - Integration Test Planning
+- **Errors:** None
+- **All Tests Pass:** N/A (planning phase)
+- **Notes:** Added Phase 3: Integration Tests to implementation plan. Identified critical gap: no Anthropic SDK mocking exists. Defined 5 integration test suites: Mock Anthropic Client (P0), Agent Loop Integration (P1), HTTP Flow Integration (P1), Tool Execution Integration (P2), Full Stack E2E (P3). Current state: 71 unit tests, 0 integration tests.
