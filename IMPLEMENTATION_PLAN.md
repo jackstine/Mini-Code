@@ -299,12 +299,110 @@ type EventHandler interface {
 - [ ] Implement termination conditions
 - [ ] Write unit/integration tests
 
+**Anthropic Go SDK Implementation Pattern:**
+```go
+func (h *Harness) runAgentLoop(ctx context.Context) error {
+    for turn := 0; turn < h.config.MaxTurns; turn++ {
+        // Create streaming request
+        stream := h.client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
+            Model:     anthropic.Model(h.config.Model),
+            MaxTokens: int64(h.config.MaxTokens),
+            System:    []anthropic.TextBlockParam{{Text: h.config.SystemPrompt}},
+            Messages:  h.messages,
+            Tools:     h.toolParams,
+        })
+
+        // Accumulate streaming response
+        message := anthropic.Message{}
+        for stream.Next() {
+            event := stream.Current()
+            if err := message.Accumulate(event); err != nil {
+                return err
+            }
+
+            // Emit events on ContentBlockStopEvent
+            switch e := event.AsAny().(type) {
+            case anthropic.ContentBlockStopEvent:
+                h.emitBlockComplete(&message, e.Index)
+            }
+        }
+        if stream.Err() != nil {
+            return stream.Err()
+        }
+
+        // Append assistant message to history
+        h.messages = append(h.messages, message.ToParam())
+
+        // Process tool calls
+        toolCalls := h.extractToolCalls(&message)
+        if len(toolCalls) == 0 {
+            return nil // No tool calls = done
+        }
+
+        // Execute tools sequentially with fail-fast
+        toolResults, err := h.executeTools(ctx, toolCalls)
+        if err != nil {
+            return err
+        }
+
+        // Append tool results as user message
+        h.messages = append(h.messages, anthropic.NewUserMessage(toolResults...))
+    }
+    return nil // MaxTurns reached
+}
+
+// Tool result creation
+func (h *Harness) executeTools(ctx context.Context, calls []ToolCall) ([]anthropic.ContentBlockParamUnion, error) {
+    var results []anthropic.ContentBlockParamUnion
+    for _, call := range calls {
+        result, err := h.executeTool(ctx, call)
+        isError := err != nil
+        resultStr := result
+        if isError {
+            resultStr = err.Error()
+        }
+
+        // Emit tool result event
+        if h.handler != nil {
+            h.handler.OnToolResult(call.ID, resultStr, isError)
+        }
+
+        // Create tool result block
+        results = append(results, anthropic.NewToolResultBlock(call.ID, resultStr, isError))
+
+        // Fail-fast: stop on first error
+        if isError {
+            break
+        }
+    }
+    return results, nil
+}
+```
+
 **Event Emission Timing (Critical):**
 | API Event | Harness Action |
 |-----------|----------------|
 | `ContentBlockStopEvent` (text) | `OnText(completeText)` |
 | `ContentBlockStopEvent` (tool_use) | `OnToolCall(id, name, input)` |
 | Tool execution completes | `OnToolResult(id, result, isError)` |
+
+**Detecting Block Types:**
+```go
+func (h *Harness) emitBlockComplete(msg *anthropic.Message, index int64) {
+    block := msg.Content[index]
+    switch b := block.AsAny().(type) {
+    case anthropic.TextBlock:
+        if h.handler != nil {
+            h.handler.OnText(b.Text)
+        }
+    case anthropic.ToolUseBlock:
+        if h.handler != nil {
+            inputJSON, _ := json.Marshal(b.Input)
+            h.handler.OnToolCall(b.ID, b.Name, inputJSON)
+        }
+    }
+}
+```
 
 **Tool Execution Rules:**
 1. Execute tools sequentially in response order
@@ -377,6 +475,77 @@ type EventHandler interface {
 | POST | `/prompt` | `{"content": "..."}` | 200 OK or error |
 | POST | `/cancel` | (empty) | 200 OK |
 
+**Go SSE Server Implementation Pattern:**
+```go
+// SSE endpoint handler
+func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
+    // Set SSE headers
+    w.Header().Set("Content-Type", "text/event-stream")
+    w.Header().Set("Cache-Control", "no-cache")
+    w.Header().Set("Connection", "keep-alive")
+
+    flusher, ok := w.(http.Flusher)
+    if !ok {
+        http.Error(w, "SSE not supported", http.StatusInternalServerError)
+        return
+    }
+
+    // Register this client
+    client := s.addClient()
+    defer s.removeClient(client)
+
+    // Heartbeat ticker
+    heartbeat := time.NewTicker(30 * time.Second)
+    defer heartbeat.Stop()
+
+    for {
+        select {
+        case event := <-client.events:
+            fmt.Fprintf(w, "data: %s\n\n", event)
+            flusher.Flush()
+        case <-heartbeat.C:
+            fmt.Fprintf(w, ": heartbeat\n\n")
+            flusher.Flush()
+        case <-r.Context().Done():
+            return
+        }
+    }
+}
+
+// Broadcast event to all SSE clients
+func (s *Server) broadcast(event Event) {
+    event.Timestamp = time.Now().Unix()
+    data, _ := json.Marshal(event)
+
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    for _, client := range s.clients {
+        select {
+        case client.events <- data:
+        default:
+            // Client buffer full, skip
+        }
+    }
+}
+
+// EventHandler implementation for SSE broadcasting
+type SSEEventHandler struct {
+    server *Server
+}
+
+func (h *SSEEventHandler) OnText(text string) {
+    h.server.broadcast(Event{Type: "text", Content: text})
+}
+
+func (h *SSEEventHandler) OnToolCall(id, name string, input json.RawMessage) {
+    h.server.broadcast(Event{Type: "tool_call", ID: id, Name: name, Input: input})
+}
+
+func (h *SSEEventHandler) OnToolResult(id, result string, isError bool) {
+    h.server.broadcast(Event{Type: "tool_result", ID: id, Result: result, IsError: isError})
+}
+```
+
 **Acceptance Criteria:**
 | Requirement | Verification |
 |-------------|--------------|
@@ -398,29 +567,56 @@ type EventHandler interface {
 
 **Specification Reference:** `specs/tui.md` (Packages section)
 
+**Runtime:** Bun (for native TypeScript support and faster execution)
+
 **Tasks:**
-- [ ] Initialize project in `tui/` directory
-- [ ] Configure TypeScript (`tsconfig.json`)
+- [ ] Initialize project in `tui/` directory with `bun init`
+- [ ] Configure TypeScript (`tsconfig.json`) with strict mode
 - [ ] Add dependencies: `@opentui/core`, `@opentui/solid`, `solid-js`, `zod`
 - [ ] Define Zod schemas for all event types in `tui/src/schemas/events.ts`
+- [ ] Create entry point `tui/src/index.tsx`
 
-**Event Schemas (Zod):**
+**Project Initialization:**
+```bash
+cd tui
+bun init
+bun add @opentui/core @opentui/solid solid-js zod
+```
+
+**tsconfig.json:**
+```json
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*"]
+}
+```
+
+**Event Schemas (Zod with Discriminated Union):**
 ```typescript
-// User event
+import { z } from "zod"
+
+// Individual event schemas
 const UserEventSchema = z.object({
   type: z.literal("user"),
   content: z.string(),
   timestamp: z.number()
 })
 
-// Text event
 const TextEventSchema = z.object({
   type: z.literal("text"),
   content: z.string(),
   timestamp: z.number()
 })
 
-// Tool call event
 const ToolCallEventSchema = z.object({
   type: z.literal("tool_call"),
   id: z.string(),
@@ -429,7 +625,6 @@ const ToolCallEventSchema = z.object({
   timestamp: z.number()
 })
 
-// Tool result event
 const ToolResultEventSchema = z.object({
   type: z.literal("tool_result"),
   id: z.string(),
@@ -438,26 +633,42 @@ const ToolResultEventSchema = z.object({
   timestamp: z.number()
 })
 
-// Reasoning event
 const ReasoningEventSchema = z.object({
   type: z.literal("reasoning"),
   content: z.string(),
   timestamp: z.number()
 })
 
-// Status event
 const StatusEventSchema = z.object({
   type: z.literal("status"),
-  state: z.string(),
+  state: z.enum(["idle", "thinking", "running_tool", "error"]),
   message: z.string().optional()
 })
+
+// Discriminated union for efficient parsing
+export const EventSchema = z.discriminatedUnion("type", [
+  UserEventSchema,
+  TextEventSchema,
+  ToolCallEventSchema,
+  ToolResultEventSchema,
+  ReasoningEventSchema,
+  StatusEventSchema,
+])
+
+// Type inference
+export type Event = z.infer<typeof EventSchema>
+export type UserEvent = z.infer<typeof UserEventSchema>
+export type TextEvent = z.infer<typeof TextEventSchema>
+export type ToolCallEvent = z.infer<typeof ToolCallEventSchema>
+export type ToolResultEvent = z.infer<typeof ToolResultEventSchema>
 ```
 
 **Acceptance Criteria:**
-- Project builds without errors (`npm run build`)
+- Project builds without errors (`bun run build`)
 - TypeScript strict mode enabled
 - All Zod schemas validate sample events correctly
 - Type inference from schemas works
+- `z.discriminatedUnion` used for efficient event parsing
 
 ---
 
@@ -473,17 +684,75 @@ const StatusEventSchema = z.object({
 - [ ] Add automatic reconnection on disconnect
 - [ ] Validate events with Zod schemas
 
-**SSE Client Requirements:**
-- Connect to `GET /events`
-- Parse `data: {...}` events
-- Validate against Zod schemas
-- Emit typed events to handlers
-- Auto-reconnect on disconnect
-
-**REST Client Requirements:**
+**SSE Client Implementation:**
 ```typescript
-async function submitPrompt(content: string): Promise<void>
-async function cancelAgent(): Promise<void>
+// tui/src/lib/sse.ts
+import { EventSchema, type Event } from "../schemas/events"
+
+type EventCallback = (event: Event) => void
+
+export function createSSEClient(baseUrl: string, onEvent: EventCallback) {
+  let eventSource: EventSource | null = null
+  let reconnectTimeout: Timer | null = null
+
+  function connect() {
+    eventSource = new EventSource(`${baseUrl}/events`)
+
+    eventSource.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data)
+        const result = EventSchema.safeParse(data)
+        if (result.success) {
+          onEvent(result.data)
+        } else {
+          console.error("Invalid event:", result.error)
+        }
+      } catch (err) {
+        console.error("Failed to parse SSE event:", err)
+      }
+    }
+
+    eventSource.onerror = () => {
+      eventSource?.close()
+      // Auto-reconnect after 1 second
+      reconnectTimeout = setTimeout(connect, 1000)
+    }
+  }
+
+  function disconnect() {
+    if (reconnectTimeout) clearTimeout(reconnectTimeout)
+    eventSource?.close()
+  }
+
+  connect()
+  return { disconnect }
+}
+```
+
+**REST Client Implementation:**
+```typescript
+// tui/src/lib/api.ts
+const BASE_URL = "http://localhost:8080"
+
+export async function submitPrompt(content: string): Promise<void> {
+  const response = await fetch(`${BASE_URL}/prompt`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  })
+  if (!response.ok) {
+    throw new Error(`Failed to submit prompt: ${response.statusText}`)
+  }
+}
+
+export async function cancelAgent(): Promise<void> {
+  const response = await fetch(`${BASE_URL}/cancel`, {
+    method: "POST",
+  })
+  if (!response.ok) {
+    throw new Error(`Failed to cancel: ${response.statusText}`)
+  }
+}
 ```
 
 **Acceptance Criteria:**
@@ -492,7 +761,7 @@ async function cancelAgent(): Promise<void>
 | SSE connects | Receives events from `/events` |
 | Event parsing | JSON parsed correctly |
 | Schema validation | Invalid events logged/rejected gracefully |
-| Reconnection | Auto-reconnects after disconnect |
+| Reconnection | Auto-reconnects after 1 second on disconnect |
 | submitPrompt works | POST /prompt succeeds |
 | cancelAgent works | POST /cancel succeeds |
 
@@ -508,36 +777,136 @@ async function cancelAgent(): Promise<void>
 - [ ] Implement conversation store in `tui/src/stores/conversation.ts`
 - [ ] Implement status store in `tui/src/stores/status.ts`
 - [ ] Implement input store in `tui/src/stores/input.ts`
-- [ ] Use Solid.js signals for reactivity
+- [ ] Use Solid.js signals and stores for reactivity
 
-**Part Types:**
+**Solid.js State Patterns:**
+
 ```typescript
-type UserPart = { type: "user"; content: string; timestamp: number }
-type TextPart = { type: "text"; content: string; timestamp: number }
-type ToolPart = {
-  type: "tool"; id: string; name: string;
-  input: Record<string, unknown>; result: string | null;
-  isError: boolean; timestamp: number
+// tui/src/stores/conversation.ts
+import { createStore, produce } from "solid-js/store"
+import type { Event } from "../schemas/events"
+
+export type Part =
+  | { type: "user"; content: string; timestamp: number }
+  | { type: "text"; content: string; timestamp: number }
+  | { type: "tool"; id: string; name: string; input: Record<string, unknown>; result: string | null; isError: boolean; timestamp: number }
+  | { type: "reasoning"; content: string; timestamp: number }
+
+const [parts, setParts] = createStore<Part[]>([])
+
+export function handleEvent(event: Event) {
+  switch (event.type) {
+    case "user":
+      setParts(produce(p => p.push({ type: "user", content: event.content, timestamp: event.timestamp })))
+      break
+    case "text":
+      setParts(produce(p => p.push({ type: "text", content: event.content, timestamp: event.timestamp })))
+      break
+    case "tool_call":
+      setParts(produce(p => p.push({
+        type: "tool",
+        id: event.id,
+        name: event.name,
+        input: event.input,
+        result: null,
+        isError: false,
+        timestamp: event.timestamp
+      })))
+      break
+    case "tool_result":
+      // Update existing tool part with result
+      setParts(
+        part => part.type === "tool" && part.id === event.id,
+        produce(part => {
+          part.result = event.result
+          part.isError = event.isError
+        })
+      )
+      break
+    case "reasoning":
+      setParts(produce(p => p.push({ type: "reasoning", content: event.content, timestamp: event.timestamp })))
+      break
+  }
 }
-type ReasoningPart = { type: "reasoning"; content: string; timestamp: number }
+
+export { parts }
 ```
 
-**Status States:**
-- `idle` - No indicator shown
-- `thinking` - "Thinking..."
-- `running_tool` - "Running: {tool_name}..."
-- `error` - "Error: {message}"
+```typescript
+// tui/src/stores/status.ts
+import { createSignal } from "solid-js"
 
-**Input Store:**
-- Current input text
-- History array (max 100 entries)
-- History navigation index
+type StatusState = "idle" | "thinking" | "running_tool" | "error"
+
+const [status, setStatus] = createSignal<StatusState>("idle")
+const [statusMessage, setStatusMessage] = createSignal<string>("")
+const [currentTool, setCurrentTool] = createSignal<string>("")
+
+export function handleStatusEvent(event: { state: string; message?: string }) {
+  setStatus(event.state as StatusState)
+  setStatusMessage(event.message ?? "")
+}
+
+export function setRunningTool(toolName: string) {
+  setStatus("running_tool")
+  setCurrentTool(toolName)
+}
+
+export { status, statusMessage, currentTool }
+```
+
+```typescript
+// tui/src/stores/input.ts
+import { createSignal } from "solid-js"
+
+const MAX_HISTORY = 100
+
+const [inputText, setInputText] = createSignal("")
+const [history, setHistory] = createSignal<string[]>([])
+const [historyIndex, setHistoryIndex] = createSignal(-1)
+
+export function addToHistory(prompt: string) {
+  setHistory(prev => {
+    const newHistory = [...prev, prompt]
+    if (newHistory.length > MAX_HISTORY) {
+      newHistory.shift() // Remove oldest (FIFO)
+    }
+    return newHistory
+  })
+  setHistoryIndex(-1)
+}
+
+export function navigateHistoryUp() {
+  const h = history()
+  const idx = historyIndex()
+  if (idx < h.length - 1) {
+    const newIdx = idx + 1
+    setHistoryIndex(newIdx)
+    setInputText(h[h.length - 1 - newIdx])
+  }
+}
+
+export function navigateHistoryDown() {
+  const idx = historyIndex()
+  if (idx > 0) {
+    const newIdx = idx - 1
+    setHistoryIndex(newIdx)
+    setInputText(history()[history().length - 1 - newIdx])
+  } else if (idx === 0) {
+    setHistoryIndex(-1)
+    setInputText("")
+  }
+}
+
+export { inputText, setInputText, history }
+```
 
 **Acceptance Criteria:**
 - Stores update reactively when events arrive
 - Status reflects current agent state
 - Input history navigates correctly (Up/Down)
 - Parts array maintains order
+- Tool parts updated in-place when result arrives
 
 ---
 
@@ -598,6 +967,192 @@ type ReasoningPart = { type: "reasoning"; content: string; timestamp: number }
 - [ ] Implement `Status.tsx` - Status indicator
 - [ ] Implement `Help.tsx` - Centered modal overlay
 
+**OpenTUI Component Patterns:**
+
+```tsx
+// tui/src/components/parts/UserPart.tsx
+import type { Component } from "solid-js"
+
+interface Props {
+  content: string
+}
+
+export const UserPart: Component<Props> = (props) => (
+  <box flexDirection="column" marginBottom={1}>
+    <text content="You:" fg="#00FFFF" attributes={1} />
+    <text content={props.content} fg="#00FFFF" />
+  </box>
+)
+```
+
+```tsx
+// tui/src/components/parts/ToolPart.tsx
+import type { Component } from "solid-js"
+import { Show } from "solid-js"
+
+interface Props {
+  name: string
+  input: Record<string, unknown>
+  result: string | null
+  isError: boolean
+}
+
+const MAX_LINES = 100
+
+function truncateResult(result: string): { text: string; truncated: number } {
+  const lines = result.split("\n")
+  if (lines.length <= MAX_LINES) {
+    return { text: result, truncated: 0 }
+  }
+  return {
+    text: lines.slice(0, MAX_LINES).join("\n"),
+    truncated: lines.length - MAX_LINES
+  }
+}
+
+export const ToolPart: Component<Props> = (props) => {
+  const truncated = () => props.result ? truncateResult(props.result) : null
+
+  return (
+    <box flexDirection="column" marginBottom={1} border={true} borderColor="#444444">
+      <text content={`Tool: ${props.name}`} fg="#FFFF00" attributes={1} />
+      <text content={`Input: ${JSON.stringify(props.input)}`} fg="#888888" />
+      <Show when={props.result !== null}>
+        <text
+          content={truncated()?.text ?? ""}
+          fg={props.isError ? "#FF0000" : "#e0e0e0"}
+        />
+        <Show when={truncated()?.truncated ?? 0 > 0}>
+          <text content={`... (${truncated()?.truncated} more lines)`} fg="#888888" />
+        </Show>
+      </Show>
+    </box>
+  )
+}
+```
+
+```tsx
+// tui/src/components/Conversation.tsx
+import { render } from "@opentui/solid"
+import { For } from "solid-js"
+import { parts } from "../stores/conversation"
+import { UserPart } from "./parts/UserPart"
+import { TextPart } from "./parts/TextPart"
+import { ToolPart } from "./parts/ToolPart"
+import { ReasoningPart } from "./parts/ReasoningPart"
+
+export const Conversation = () => (
+  <scrollbox
+    width="100%"
+    height="100%-3"
+    stickyScroll={true}
+    borderStyle="single"
+    borderColor="#444444"
+  >
+    <For each={parts}>
+      {(part) => {
+        switch (part.type) {
+          case "user":
+            return <UserPart content={part.content} />
+          case "text":
+            return <TextPart content={part.content} />
+          case "tool":
+            return <ToolPart name={part.name} input={part.input} result={part.result} isError={part.isError} />
+          case "reasoning":
+            return <ReasoningPart content={part.content} />
+        }
+      }}
+    </For>
+  </scrollbox>
+)
+```
+
+```tsx
+// tui/src/components/InputBar.tsx
+import { useKeyboard } from "@opentui/solid"
+import { inputText, setInputText, navigateHistoryUp, navigateHistoryDown, addToHistory } from "../stores/input"
+import { submitPrompt } from "../lib/api"
+
+export const InputBar = () => {
+  const handleSubmit = async (value: string) => {
+    if (value.trim()) {
+      addToHistory(value)
+      setInputText("")
+      await submitPrompt(value)
+    }
+  }
+
+  useKeyboard((key) => {
+    if (key.name === "up") {
+      navigateHistoryUp()
+    } else if (key.name === "down") {
+      navigateHistoryDown()
+    }
+  })
+
+  return (
+    <box width="100%" height={3} position="absolute" bottom={0}>
+      <input
+        placeholder="Enter prompt..."
+        value={inputText()}
+        onInput={(value) => setInputText(value)}
+        onSubmit={handleSubmit}
+        focused={true}
+        width="100%"
+        border={true}
+        borderColor="#666666"
+      />
+    </box>
+  )
+}
+```
+
+```tsx
+// tui/src/components/Help.tsx
+import { Show } from "solid-js"
+import { useTerminalDimensions } from "@opentui/solid"
+
+interface Props {
+  visible: boolean
+  onClose: () => void
+}
+
+export const Help = (props: Props) => {
+  const dimensions = useTerminalDimensions()
+  const width = 50
+  const height = 15
+
+  return (
+    <Show when={props.visible}>
+      <box
+        position="absolute"
+        left={Math.floor((dimensions().width - width) / 2)}
+        top={Math.floor((dimensions().height - height) / 2)}
+        width={width}
+        height={height}
+        border={true}
+        borderColor="#FFFF00"
+        backgroundColor="#1a1a1a"
+        padding={1}
+      >
+        <text content="Help - Keybindings" fg="#FFFF00" attributes={1} />
+        <text content="" />
+        <text content="Enter           Submit prompt" fg="#e0e0e0" />
+        <text content="Ctrl+Enter      Insert newline" fg="#e0e0e0" />
+        <text content="Ctrl+C          Cancel / Exit" fg="#e0e0e0" />
+        <text content="Up/Down         Prompt history" fg="#e0e0e0" />
+        <text content="PageUp/Down     Scroll" fg="#e0e0e0" />
+        <text content="Ctrl+U          Clear input" fg="#e0e0e0" />
+        <text content="? or F1         Toggle help" fg="#e0e0e0" />
+        <text content="Esc             Close" fg="#e0e0e0" />
+        <text content="" />
+        <text content="Press any key to close" fg="#888888" />
+      </box>
+    </Show>
+  )
+}
+```
+
 **ToolPart Display Rules:**
 - Tool name prominently shown (yellow)
 - Input parameters displayed in full (JSON)
@@ -606,10 +1161,9 @@ type ReasoningPart = { type: "reasoning"; content: string; timestamp: number }
 - Errors in red
 
 **Scrolling Behavior:**
-- Auto-scroll on new content
-- Pause auto-scroll when user scrolls up
-- Resume when scrolled to bottom
-- Optional: "↓ New content" indicator
+- `stickyScroll={true}` enables auto-scroll on new content
+- Automatically pauses when user scrolls up
+- Resumes when scrolled to bottom
 
 **Acceptance Criteria:**
 | Component | Requirement |
@@ -618,10 +1172,10 @@ type ReasoningPart = { type: "reasoning"; content: string; timestamp: number }
 | TextPart | Markdown renders correctly |
 | ToolPart | Name yellow, result ≤100 lines, errors red |
 | ReasoningPart | Dimmed/italic styling |
-| Conversation | Auto-scroll with manual override |
+| Conversation | Auto-scroll with manual override via stickyScroll |
 | InputBar | Text entry, history, multiline |
 | Status | Shows correct state |
-| Help | Modal displays and dismisses |
+| Help | Modal displays and dismisses on any key |
 
 ---
 
@@ -635,33 +1189,142 @@ type ReasoningPart = { type: "reasoning"; content: string; timestamp: number }
 - [ ] Implement main layout in `tui/src/App.tsx`
 - [ ] Define theme in `tui/src/theme.ts`
 - [ ] Handle terminal resize
+- [ ] Wire up SSE client to state stores
+
+**Main Application Entry Point:**
+```tsx
+// tui/src/index.tsx
+import { render } from "@opentui/solid"
+import { App } from "./App"
+
+render(App, {
+  targetFps: 30,
+  exitOnCtrlC: false, // We handle Ctrl+C manually
+})
+```
+
+```tsx
+// tui/src/App.tsx
+import { createSignal, onMount, onCleanup } from "solid-js"
+import { useKeyboard, useRenderer } from "@opentui/solid"
+import { Conversation } from "./components/Conversation"
+import { InputBar } from "./components/InputBar"
+import { Status } from "./components/Status"
+import { Help } from "./components/Help"
+import { createSSEClient } from "./lib/sse"
+import { handleEvent } from "./stores/conversation"
+import { cancelAgent } from "./lib/api"
+import { status } from "./stores/status"
+import { loadHistory } from "./lib/history"
+
+export const App = () => {
+  const renderer = useRenderer()
+  const [showHelp, setShowHelp] = createSignal(false)
+
+  // Connect to SSE on mount
+  onMount(() => {
+    loadHistory() // Load persisted history
+
+    const sse = createSSEClient("http://localhost:8080", (event) => {
+      handleEvent(event)
+    })
+
+    onCleanup(() => sse.disconnect())
+  })
+
+  // Global keybindings
+  useKeyboard((key) => {
+    // Help toggle
+    if (key.name === "?" || key.name === "f1") {
+      setShowHelp(v => !v)
+      return
+    }
+
+    // Close help on any key when open
+    if (showHelp()) {
+      setShowHelp(false)
+      return
+    }
+
+    // Ctrl+C: Cancel or exit
+    if (key.ctrl && key.name === "c") {
+      if (status() !== "idle") {
+        cancelAgent()
+      } else {
+        renderer.destroy()
+      }
+      return
+    }
+
+    // Esc: Close help
+    if (key.name === "escape") {
+      setShowHelp(false)
+    }
+  })
+
+  return (
+    <box flexDirection="column" width="100%" height="100%" backgroundColor="#1a1a1a">
+      <Conversation />
+      <Status />
+      <InputBar />
+      <Help visible={showHelp()} onClose={() => setShowHelp(false)} />
+    </box>
+  )
+}
+```
+
+**Theme Constants:**
+```typescript
+// tui/src/theme.ts
+export const theme = {
+  colors: {
+    background: "#1a1a1a",
+    text: "#e0e0e0",
+    textDim: "#888888",
+    userPrompt: "#00FFFF",    // Cyan
+    toolName: "#FFFF00",       // Yellow
+    error: "#FF0000",          // Red
+    reasoning: "#666666",      // Dimmed gray
+    border: "#444444",
+    status: "#FFFF00",
+    codeBlockBg: "#3d3a28",
+  },
+  attributes: {
+    bold: 1,
+    dim: 2,
+    italic: 4,
+    underline: 8,
+  }
+} as const
+```
 
 **Layout Regions:**
 | Region | Position | Content |
 |--------|----------|---------|
-| Conversation | Top (scrollable) | All parts |
-| Input | Bottom | Text input bar |
-| Status | Above/within input | Status indicator |
+| Conversation | Top (scrollable, flex: 1) | All parts |
+| Status | Above input | Status indicator |
+| Input | Bottom (height: 3) | Text input bar |
 
 **Theme Colors:**
 | Element | Color |
 |---------|-------|
 | Background | #1a1a1a (dark gray) |
 | Text | #e0e0e0 (light gray) |
-| User prompt | Cyan accent |
-| Agent text | Light gray (default) |
-| Tool name | Yellow |
-| Tool result | Light gray |
-| Error | Red |
-| Reasoning | Dimmed gray |
-| Input border | Subtle gray |
-| Status | Yellow |
+| User prompt | #00FFFF (cyan) |
+| Agent text | #e0e0e0 (light gray) |
+| Tool name | #FFFF00 (yellow) |
+| Tool result | #e0e0e0 (light gray) |
+| Error | #FF0000 (red) |
+| Reasoning | #666666 (dimmed gray) |
+| Border | #444444 (subtle gray) |
+| Status | #FFFF00 (yellow) |
 | Code block bg | #3d3a28 |
 
 **Acceptance Criteria:**
 - Layout renders correctly at various terminal sizes
 - Colors match specification
-- Resize handled gracefully
+- Resize handled gracefully via `useTerminalDimensions()`
+- SSE client connects on mount and disconnects on cleanup
 
 ---
 
@@ -787,20 +1450,38 @@ harness/
 ### Go
 
 ```go
+// go.mod
+module github.com/user/harness
+
+go 1.21
+
 require (
-    github.com/anthropics/anthropic-sdk-go
+    github.com/anthropics/anthropic-sdk-go v0.2.0
 )
 ```
 
-### TypeScript
+### TypeScript (Bun)
+
+**Runtime:** Bun v1.0+ (for native TypeScript support)
 
 ```json
+// tui/package.json
 {
+  "name": "harness-tui",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.tsx",
+    "build": "bun build src/index.tsx --outdir=dist"
+  },
   "dependencies": {
-    "@opentui/core": "latest",
-    "@opentui/solid": "latest",
-    "solid-js": "^1.8",
-    "zod": "^3.22"
+    "@opentui/core": "^0.1.75",
+    "@opentui/solid": "^0.1.75",
+    "solid-js": "^1.9.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
   }
 }
 ```
@@ -850,3 +1531,50 @@ require (
 7. **Heartbeat interval** — 30 seconds for SSE to prevent timeout
 8. **Line indexing** — 1-indexed for READ tool (first line is line 1)
 9. **Result truncation** — Tool results truncated at 100 lines in TUI
+10. **Bun runtime** — TUI uses Bun for native TypeScript execution
+11. **Zod discriminated unions** — Use `z.discriminatedUnion("type", [...])` for efficient event parsing
+
+---
+
+## Tool Registration Pattern (Go)
+
+Tools must be converted to Anthropic API format when registering with the harness:
+
+```go
+// Convert Tool interface to Anthropic ToolParam
+func toolToParam(t tool.Tool) anthropic.ToolUnionParam {
+    return anthropic.ToolUnionParam{
+        OfTool: &anthropic.ToolParam{
+            Name:        t.Name(),
+            Description: anthropic.String(t.Description()),
+            InputSchema: anthropic.ToolInputSchemaParam{
+                Properties: t.InputSchema(), // json.RawMessage
+            },
+        },
+    }
+}
+
+// In Harness constructor
+func NewHarness(config Config, tools []tool.Tool, handler EventHandler) *Harness {
+    // Convert tools to API format
+    toolParams := make([]anthropic.ToolUnionParam, len(tools))
+    for i, t := range tools {
+        toolParams[i] = toolToParam(t)
+    }
+
+    // Create tool lookup map for execution
+    toolMap := make(map[string]tool.Tool)
+    for _, t := range tools {
+        toolMap[t.Name()] = t
+    }
+
+    return &Harness{
+        client:     anthropic.NewClient(),
+        config:     config,
+        tools:      toolMap,
+        toolParams: toolParams,
+        handler:    handler,
+        messages:   []anthropic.MessageParam{},
+    }
+}
+```
