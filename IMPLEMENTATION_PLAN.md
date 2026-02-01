@@ -1109,3 +1109,8 @@ Tools must be converted to Anthropic API format when registering with the harnes
 - **Errors:** Text selection not working, Ctrl+Shift+C not copying
 - **All Tests Pass:** Yes (138 tests)
 - **Notes:** Added `selectable` prop to all text elements in UserPart, ToolPart, ReasoningPart, and markdown renderer. OpenTUI requires explicit `selectable` prop for text selection. Also fixed keyboard handler to check both lowercase 'c' and uppercase 'C' for Ctrl+Shift+C binding.
+
+### 2026-02-01 - Fix Anthropic API 400 Bad Request
+- **Errors:** 400 Bad Request from Anthropic API
+- **All Tests Pass:** Yes (138 tests)
+- **Notes:** Updated default model from `claude-3-haiku-20240307` to `claude-sonnet-4-20250514` (old haiku model ID was deprecated). Also fixed `toolToParam` function to include `required` field from tool input schema - the API expects this for proper tool definition validation.
