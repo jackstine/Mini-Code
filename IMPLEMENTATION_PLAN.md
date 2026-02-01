@@ -881,13 +881,27 @@ tests/
 
 **Tool-Triggering Test Prompts:**
 
+Test data is located in `test_data/tools/list_dir/` (contains 5 story files about an ant helping a lion) and `test_data/test_prompts/` (contains simple prompt files).
+
 | Prompt | Purpose | Expected Tool Calls |
 |--------|---------|---------------------|
-| `list the files in /tmp` | Test LIST_DIR tool | `list_dir({path: "/tmp"})` |
-| `read the first 3 lines of /etc/hosts` | Test READ tool | `read({path: "/etc/hosts", end_line: 3})` |
-| `search for "root" in /etc/passwd` | Test GREP tool | `grep({pattern: "root", path: "/etc/passwd"})` |
+| `list the files in test_data/tools/list_dir` | Test LIST_DIR tool | `list_dir({path: "test_data/tools/list_dir"})` |
+| `read the first 5 lines of test_data/tools/list_dir/file1.txt` | Test READ tool | `read({path: "test_data/tools/list_dir/file1.txt", end_line: 5})` |
+| `search for "lion" in test_data/tools/list_dir` | Test GREP tool | `grep({pattern: "lion", path: "test_data/tools/list_dir", recursive: true})` |
+| `count how many times "ant" appears in test_data/tools/list_dir` | Test GREP with pattern counting | `grep({pattern: "ant", path: "test_data/tools/list_dir", recursive: true})` |
 
 **Note:** Tool-triggering prompts may vary in reliability as the model may interpret them differently. For deterministic tool testing, use the mock Anthropic client with pre-defined responses.
+
+**Test Data Structure:**
+- `test_data/tools/list_dir/` - 5 text files with stories about an ant helping a lion
+  - `file1.txt` - The ant frees a trapped lion from a hunter's net
+  - `file2.txt` - An ant colony heals a fever-stricken lion
+  - `file3.txt` - An ant heals the lion's infected paw wound
+  - `file4.txt` - The ant's swarm helps the lion win a territorial battle
+  - `file5.txt` - An ant community sustains an aging, weakening lion
+- `test_data/test_prompts/` - Simple test prompts
+  - `prompt_1.md` - "2+2="
+  - `prompt_2.md` - "write me a very small poem, 3 lines please."
 
 ---
 
