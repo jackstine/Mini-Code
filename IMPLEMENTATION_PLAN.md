@@ -862,6 +862,35 @@ tests/
 
 ---
 
+#### Test Prompts for Integration Testing
+
+**Why:** Integration tests that call the real Anthropic API should use minimal prompts to reduce cost and execution time while still validating the complete flow.
+
+**Standard Test Prompts:**
+
+| Prompt | Purpose | Expected Response Type |
+|--------|---------|------------------------|
+| `2+2=` | Minimal math test | Short text (e.g., "4") |
+| `write me a very small poem, 3 lines please.` | Constrained creative test | 3-line text response |
+
+**Usage Guidelines:**
+- Use `2+2=` for quick smoke tests and flow validation
+- Use the poem prompt when testing text streaming/display
+- Both prompts should complete in < 5 seconds
+- Neither should trigger tool calls (text-only responses)
+
+**Tool-Triggering Test Prompts:**
+
+| Prompt | Purpose | Expected Tool Calls |
+|--------|---------|---------------------|
+| `list the files in /tmp` | Test LIST_DIR tool | `list_dir({path: "/tmp"})` |
+| `read the first 3 lines of /etc/hosts` | Test READ tool | `read({path: "/etc/hosts", end_line: 3})` |
+| `search for "root" in /etc/passwd` | Test GREP tool | `grep({pattern: "root", path: "/etc/passwd"})` |
+
+**Note:** Tool-triggering prompts may vary in reliability as the model may interpret them differently. For deterministic tool testing, use the mock Anthropic client with pre-defined responses.
+
+---
+
 ## File Structure
 
 ```
