@@ -1104,3 +1104,8 @@ Tools must be converted to Anthropic API format when registering with the harnes
 - **Errors:** EventSource is not defined
 - **All Tests Pass:** Yes (138 tests)
 - **Notes:** Fixed tui/src/lib/sse.ts to use native fetch API with streaming response instead of EventSource (browser-only API). Uses AbortController for cancellation, ReadableStream reader for parsing SSE events, proper buffering for incomplete messages, and maintains auto-reconnect behavior.
+
+### 2026-02-01 - Fix Text Selection and Copy
+- **Errors:** Text selection not working, Ctrl+Shift+C not copying
+- **All Tests Pass:** Yes (138 tests)
+- **Notes:** Added `selectable` prop to all text elements in UserPart, ToolPart, ReasoningPart, and markdown renderer. OpenTUI requires explicit `selectable` prop for text selection. Also fixed keyboard handler to check both lowercase 'c' and uppercase 'C' for Ctrl+Shift+C binding.
