@@ -618,7 +618,8 @@ This document outlines the implementation plan for the Harness system - an AI ag
 | Server/SSE | ✅ 11 tests | ✅ 13 tests |
 | testutil | ✅ 15 tests | ❌ None |
 | Agent Loop | ❌ None | ✅ 8 tests |
-| **Total** | **93 tests** | **✅ 34 tests** |
+| E2E | N/A | ✅ 11 tests |
+| **Total** | **93 tests** | **✅ 45 tests (138 total)** |
 
 **Critical Gap:** No Anthropic SDK mocking exists - the agent loop cannot be tested without calling the real API.
 
@@ -801,11 +802,11 @@ SSE receives:
 **Why:** End-to-end tests verify the complete system works from TUI through server to harness and back.
 
 **Tasks:**
-- [ ] Create `tests/e2e/` directory for full stack tests
-- [ ] Test complete prompt → response flow
-- [ ] Test tool execution visibility in events
-- [ ] Test error handling end-to-end
-- [ ] Test concurrent operations
+- [x] Create `tests/e2e/` directory for full stack tests
+- [x] Test complete prompt → response flow
+- [x] Test tool execution visibility in events
+- [x] Test error handling end-to-end
+- [x] Test concurrent operations
 
 **Note:** Full stack tests require either:
 1. Running TUI in test mode (headless)
@@ -1093,3 +1094,8 @@ Tools must be converted to Anthropic API format when registering with the harnes
 - **Errors:** None
 - **All Tests Pass:** Yes (127 tests total)
 - **Notes:** Created pkg/harness/tool_integration_test.go with 13 integration tests covering READ, LIST_DIR, and GREP tools via harness. Tests verify tool execution, input validation, context cancellation, and unknown tool handling. All tests pass.
+
+### 2026-02-01 - Phase 3.5 Full Stack E2E Tests Complete
+- **Errors:** None
+- **All Tests Pass:** Yes (138 tests total)
+- **Notes:** Created tests/e2e/full_stack_test.go with 11 E2E tests covering: full prompt-response flow, multiple SSE clients, tool execution events, error handling broadcast, tool errors, concurrent prompt handling, cancellation, multiple tool calls, reasoning events, client reconnection, status transitions, input validation, high concurrency (skipped in short mode), and long-running operations (skipped in short mode). Tests use real HTTP server with mock Anthropic client for deterministic testing.
