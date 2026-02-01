@@ -6,7 +6,7 @@ import "errors"
 
 // Default configuration values
 const (
-	DefaultModel     = "claude-sonnet-4-20250514"
+	DefaultModel     = "claude-haiku-4-5-20251001"
 	DefaultMaxTokens = 4096
 	DefaultMaxTurns  = 10
 )
