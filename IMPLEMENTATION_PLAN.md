@@ -1099,3 +1099,8 @@ Tools must be converted to Anthropic API format when registering with the harnes
 - **Errors:** None
 - **All Tests Pass:** Yes (138 tests total)
 - **Notes:** Created tests/e2e/full_stack_test.go with 11 E2E tests covering: full prompt-response flow, multiple SSE clients, tool execution events, error handling broadcast, tool errors, concurrent prompt handling, cancellation, multiple tool calls, reasoning events, client reconnection, status transitions, input validation, high concurrency (skipped in short mode), and long-running operations (skipped in short mode). Tests use real HTTP server with mock Anthropic client for deterministic testing.
+
+### 2026-02-01 - Fix SSE Client for Bun Runtime
+- **Errors:** EventSource is not defined
+- **All Tests Pass:** Yes (138 tests)
+- **Notes:** Fixed tui/src/lib/sse.ts to use native fetch API with streaming response instead of EventSource (browser-only API). Uses AbortController for cancellation, ReadableStream reader for parsing SSE events, proper buffering for incomplete messages, and maintains auto-reconnect behavior.
