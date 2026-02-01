@@ -613,12 +613,12 @@ This document outlines the implementation plan for the Harness system - an AI ag
 
 | Category | Unit Tests | Integration Tests |
 |----------|------------|-------------------|
-| Tools (read/list_dir/grep) | ✅ 43 tests | ❌ None |
+| Tools (read/list_dir/grep) | ✅ 43 tests | ✅ 13 tests |
 | Config/Harness | ✅ 27 tests (19 unit + 8 integration) | ✅ 8 tests |
-| Server/SSE | ✅ 11 tests | ❌ None |
-| testutil | ✅ 11 tests | ❌ None |
+| Server/SSE | ✅ 11 tests | ✅ 13 tests |
+| testutil | ✅ 15 tests | ❌ None |
 | Agent Loop | ❌ None | ✅ 8 tests |
-| **Total** | **97 tests** | **8 tests** |
+| **Total** | **93 tests** | **✅ 34 tests** |
 
 **Critical Gap:** No Anthropic SDK mocking exists - the agent loop cannot be tested without calling the real API.
 
@@ -767,13 +767,13 @@ SSE receives:
 **Why:** Verify tools execute correctly when called through the harness (not directly), including input validation, context propagation, and result formatting.
 
 **Tasks:**
-- [ ] Create `pkg/harness/tool_integration_test.go`
-- [ ] Test READ tool via harness
-- [ ] Test LIST_DIR tool via harness
-- [ ] Test GREP tool via harness
-- [ ] Test tool input validation through harness
-- [ ] Test context cancellation during tool execution
-- [ ] Test unknown tool handling
+- [x] Create `pkg/harness/tool_integration_test.go`
+- [x] Test READ tool via harness
+- [x] Test LIST_DIR tool via harness
+- [x] Test GREP tool via harness
+- [x] Test tool input validation through harness
+- [x] Test context cancellation during tool execution
+- [x] Test unknown tool handling
 
 **Test Matrix:**
 
@@ -1088,3 +1088,8 @@ Tools must be converted to Anthropic API format when registering with the harnes
 - **Errors:** None
 - **All Tests Pass:** Yes (109 tests total)
 - **Notes:** Created pkg/server/integration_test.go with 13 integration tests covering: POST /prompt → SSE event flow, multiple concurrent SSE clients, POST /cancel during execution, tool call event sequence, error status broadcast, status transitions, prompt while busy, empty/invalid content rejection, reasoning events, multiple tool calls, client disconnect/reconnect, and heartbeat mechanism. Fixed server bug where HandlePrompt used r.Context() which got cancelled immediately (changed to context.Background()). Added initial SSE connection comment (": connected\n\n") to establish the stream. Exported handler methods (HandleSSE, HandlePrompt, HandleCancel) and added SetEventHandler method to harness.
+
+### 2026-02-01 - Phase 3.4 Tool Execution Integration Tests Complete
+- **Errors:** None
+- **All Tests Pass:** Yes (127 tests total)
+- **Notes:** Created pkg/harness/tool_integration_test.go with 13 integration tests covering READ, LIST_DIR, and GREP tools via harness. Tests verify tool execution, input validation, context cancellation, and unknown tool handling. All tests pass.
