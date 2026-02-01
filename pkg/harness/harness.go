@@ -98,18 +98,30 @@ func NewHarnessWithStreamer(config Config, tools []tool.Tool, handler EventHandl
 
 // toolToParam converts a Tool interface to Anthropic ToolUnionParam.
 func toolToParam(t tool.Tool) anthropic.ToolUnionParam {
-	// Parse the input schema to get the properties
+	// Parse the input schema to get properties and required fields
 	var schemaMap map[string]any
 	json.Unmarshal(t.InputSchema(), &schemaMap)
+
+	inputSchema := anthropic.ToolInputSchemaParam{
+		Properties: schemaMap["properties"],
+	}
+
+	// Add required field if present in the schema
+	if required, ok := schemaMap["required"].([]any); ok {
+		requiredStrs := make([]string, len(required))
+		for i, r := range required {
+			if s, ok := r.(string); ok {
+				requiredStrs[i] = s
+			}
+		}
+		inputSchema.Required = requiredStrs
+	}
 
 	return anthropic.ToolUnionParam{
 		OfTool: &anthropic.ToolParam{
 			Name:        t.Name(),
 			Description: anthropic.String(t.Description()),
-			InputSchema: anthropic.ToolInputSchemaParam{
-				Type:       "object",
-				Properties: schemaMap["properties"],
-			},
+			InputSchema: inputSchema,
 		},
 	}
 }
