@@ -16,6 +16,6 @@ export const UserPart: Component<Props> = (props) => (
       fg={theme.colors.userPrompt}
       attributes={theme.attributes.bold}
     />
-    <text content={props.content} fg={theme.colors.userPrompt} />
+    <text content={props.content} fg={theme.colors.userPrompt} selectable />
   </box>
 )

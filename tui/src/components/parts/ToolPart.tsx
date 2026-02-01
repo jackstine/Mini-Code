@@ -38,12 +38,13 @@ export const ToolPart: Component<Props> = (props) => {
         fg={theme.colors.toolName}
         attributes={theme.attributes.bold}
       />
-      <text content={`Input: ${inputStr()}`} fg={theme.colors.textDim} />
+      <text content={`Input: ${inputStr()}`} fg={theme.colors.textDim} selectable />
       <Show when={props.result !== null}>
         <text content="Result:" fg={theme.colors.textDim} />
         <text
           content={truncated()?.text ?? ""}
           fg={props.isError ? theme.colors.error : theme.colors.text}
+          selectable
         />
         <Show when={(truncated()?.truncated ?? 0) > 0}>
           <text

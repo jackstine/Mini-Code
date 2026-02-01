@@ -236,13 +236,13 @@ export function MarkdownContent(props: { content: string; theme: MarkdownTheme }
             case "codeblock":
               return (
                 <box backgroundColor={props.theme.codeBlockBg} padding={1} marginTop={1} marginBottom={1}>
-                  <text content={token.content} fg={props.theme.code} />
+                  <text content={token.content} fg={props.theme.code} selectable />
                 </box>
               )
             case "bullet":
               const bulletInline = parseInline(token.content)
               return (
-                <text fg={props.theme.text}>
+                <text fg={props.theme.text} selectable>
                   {"• "}
                   {renderInlineTokens(bulletInline, props.theme)}
                 </text>
@@ -250,14 +250,14 @@ export function MarkdownContent(props: { content: string; theme: MarkdownTheme }
             case "numbered":
               const numberedInline = parseInline(token.content)
               return (
-                <text fg={props.theme.text}>
+                <text fg={props.theme.text} selectable>
                   {`${token.number}. `}
                   {renderInlineTokens(numberedInline, props.theme)}
                 </text>
               )
             case "heading":
               return (
-                <text fg={props.theme.heading}>
+                <text fg={props.theme.heading} selectable>
                   <strong>{token.content}</strong>
                 </text>
               )
@@ -265,7 +265,7 @@ export function MarkdownContent(props: { content: string; theme: MarkdownTheme }
               return <text content="" />
             default:
               return (
-                <text fg={props.theme.text}>
+                <text fg={props.theme.text} selectable>
                   {renderInlineToken(token, props.theme)}
                 </text>
               )

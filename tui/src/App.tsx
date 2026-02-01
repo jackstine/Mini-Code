@@ -50,8 +50,10 @@ export const App = () => {
   // Handle text selection events
   useSelectionHandler((selection) => {
     // Update selection store with selected text
+    // Selection object has getText() method per OpenTUI docs
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const text = (selection as any).getText?.() ?? ""
+    const sel = selection as any
+    const text = sel.getText?.() ?? sel.getSelectedText?.() ?? ""
     updateSelection(text)
   })
 
@@ -89,7 +91,8 @@ export const App = () => {
     }
 
     // Ctrl+Shift+C: Copy selected text to clipboard
-    if (key.ctrl && key.shift && key.name === "c") {
+    // Check both lowercase and uppercase as terminal may report either
+    if (key.ctrl && key.shift && (key.name === "c" || key.name === "C")) {
       const text = getSelectedText()
       if (text) {
         copyToClipboard(text)

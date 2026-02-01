@@ -20,6 +20,7 @@ export const ReasoningPart: Component<Props> = (props) => (
       content={props.content}
       fg={theme.colors.reasoning}
       attributes={theme.attributes.dim | theme.attributes.italic}
+      selectable
     />
   </box>
 )
