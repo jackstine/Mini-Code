@@ -33,211 +33,313 @@ This document outlines the implementation plan for the Harness system - an AI ag
 
 **Why:** Establish Go module structure and define the foundational Tool interface that all tools implement. Tools are independent units with no external dependencies, making them ideal starting points.
 
-- [ ] **Initialize Go module** (`go.mod`)
-  - Module path: `github.com/user/harness` (or appropriate path)
-  - Add dependency: `github.com/anthropics/anthropic-sdk-go`
-
-- [ ] **Define Tool interface** (`pkg/tool/tool.go`)
-  - `Name() string` - returns tool identifier
-  - `Description() string` - returns tool description for API
-  - `InputSchema() json.RawMessage` - returns JSON schema for parameters
-  - `Execute(ctx context.Context, input json.RawMessage) (string, error)` - executes tool
+**Tasks:**
+- [ ] Initialize Go module (`go.mod`) with path `github.com/user/harness`
+- [ ] Add dependency: `github.com/anthropics/anthropic-sdk-go`
+- [ ] Define Tool interface in `pkg/tool/tool.go`:
+  ```go
+  type Tool interface {
+      Name() string
+      Description() string
+      InputSchema() json.RawMessage
+      Execute(ctx context.Context, input json.RawMessage) (string, error)
+  }
+  ```
 
 **Acceptance Criteria:**
-- Go module initializes and dependencies resolve
-- Tool interface compiles and is importable
+| Requirement | Verification |
+|-------------|--------------|
+| Go module initializes | `go mod tidy` succeeds without errors |
+| Anthropic SDK resolves | `go build ./...` succeeds |
+| Tool interface compiles | Interface is importable from `pkg/tool` |
+| Interface is complete | All four methods defined per spec |
 
 ---
 
 #### 1.2 READ Tool Implementation
 
-**Why:** The READ tool is the simplest tool to implement and test, establishing patterns for error handling and JSON output.
+**Why:** The READ tool is the simplest tool to implement and test, establishing patterns for JSON input/output and error handling.
 
-- [ ] **Implement READ tool** (`pkg/tool/read.go`)
-  - Accept `path` (required), `start_line` (optional), `end_line` (optional)
-  - Lines are 1-indexed, `end_line` is inclusive
-  - Return `{"content": "..."}` on success
-  - Return `{"error": "..."}` on failure
+**Specification Reference:** `specs/tools/read.md`
 
-- [ ] **Unit tests** (`pkg/tool/read_test.go`)
-  - Test: read entire file
-  - Test: read with start_line only
-  - Test: read with end_line only
-  - Test: read with both start_line and end_line
-  - Test: error - file not found
-  - Test: error - path is directory
-  - Test: error - permission denied (if testable)
-  - Test: error - start_line < 1
-  - Test: error - start_line > end_line
-  - Test: error - start_line exceeds file lines
+**Tasks:**
+- [ ] Implement READ tool in `pkg/tool/read.go`
+- [ ] Implement JSON schema for input validation
+- [ ] Write comprehensive unit tests in `pkg/tool/read_test.go`
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "path": {"type": "string", "description": "Absolute or relative file path"},
+    "start_line": {"type": "integer", "description": "First line to read (1-indexed)"},
+    "end_line": {"type": "integer", "description": "Last line to read (inclusive)"}
+  },
+  "required": ["path"]
+}
+```
+
+**Output Format:**
+- Success: `{"content": "file contents as string"}`
+- Error: `{"error": "error message"}`
+
+**Test Matrix:**
+
+| Test Case | Input | Expected Output |
+|-----------|-------|-----------------|
+| Read entire file | `{path: "test.txt"}` | `{"content": "line1\nline2\nline3"}` |
+| Read with start_line only | `{path: "test.txt", start_line: 2}` | Lines 2 to end |
+| Read with end_line only | `{path: "test.txt", end_line: 2}` | Lines 1 to 2 |
+| Read specific range | `{path: "test.txt", start_line: 2, end_line: 3}` | Lines 2-3 inclusive |
+| File not found | `{path: "nonexistent.txt"}` | `{"error": "file not found"}` |
+| Path is directory | `{path: "/tmp"}` | `{"error": "path is a directory"}` |
+| Permission denied | `{path: "/etc/shadow"}` | `{"error": "permission denied"}` |
+| start_line < 1 | `{path: "test.txt", start_line: 0}` | `{"error": "..."}` (invalid) |
+| start_line > end_line | `{start_line: 5, end_line: 2}` | `{"error": "..."}` |
+| start_line > file length | `{start_line: 9999}` | `{"error": "..."}` |
 
 **Acceptance Criteria:**
-| Scenario | Expected Result |
-|----------|-----------------|
-| Read entire file | Returns full content in `{"content": "..."}` |
-| Read lines 5-10 | Returns lines 5 through 10 inclusive |
-| Read from line 3 to end | Returns line 3 to last line |
-| Read from start to line 7 | Returns line 1 through 7 |
-| File not found | Returns `{"error": "file not found"}` or similar |
-| Path is directory | Returns `{"error": "path is a directory"}` |
-| start_line = 0 | Returns error (1-indexed) |
-| start_line > end_line | Returns error |
-| start_line > file length | Returns error |
+- Lines are 1-indexed (first line is line 1)
+- `end_line` is inclusive
+- All error conditions return `{"error": "..."}` format
+- All success cases return `{"content": "..."}` format
 
 ---
 
 #### 1.3 LIST_DIR Tool Implementation
 
-**Why:** LIST_DIR is a straightforward wrapper around `ls -al`, establishing the pattern for command execution tools.
+**Why:** LIST_DIR establishes the pattern for executing system commands and capturing output.
 
-- [ ] **Implement LIST_DIR tool** (`pkg/tool/list_dir.go`)
-  - Accept `path` (required)
-  - Execute `ls -al <path>`
-  - Return `{"entries": "..."}` on success
-  - Return `{"error": "..."}` on failure
+**Specification Reference:** `specs/tools/list_dir.md`
 
-- [ ] **Unit tests** (`pkg/tool/list_dir_test.go`)
-  - Test: list existing directory
-  - Test: includes hidden files (files starting with `.`)
-  - Test: error - path not found
-  - Test: error - path is a file (not directory)
-  - Test: error - permission denied (if testable)
+**Tasks:**
+- [ ] Implement LIST_DIR tool in `pkg/tool/list_dir.go`
+- [ ] Execute `ls -al <path>` and capture raw output
+- [ ] Write unit tests in `pkg/tool/list_dir_test.go`
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "path": {"type": "string", "description": "Directory path to list"}
+  },
+  "required": ["path"]
+}
+```
+
+**Output Format:**
+- Success: `{"entries": "raw ls -al output as string"}`
+- Error: `{"error": "error message"}`
+
+**Test Matrix:**
+
+| Test Case | Input | Expected Output |
+|-----------|-------|-----------------|
+| Valid directory | `{path: "/tmp"}` | `{"entries": "total ...\ndrwx..."}` |
+| Includes hidden files | `{path: "."}` | Output contains `.` prefixed files |
+| Non-existent path | `{path: "/nonexistent"}` | `{"error": "..."}` |
+| Path is file | `{path: "/etc/passwd"}` | `{"error": "not a directory"}` |
+| Permission denied | `{path: "/root"}` | `{"error": "permission denied"}` |
 
 **Acceptance Criteria:**
-| Scenario | Expected Result |
-|----------|-----------------|
-| Valid directory | Returns `ls -al` output with permissions, owner, size, date, name |
-| Directory with hidden files | Output includes `.` prefixed files |
-| Non-existent path | Returns `{"error": "..."}` |
-| Path is file | Returns `{"error": "not a directory"}` |
+- Output includes hidden files (files starting with `.`)
+- Output shows permissions, owner, group, size, date, name
+- Returns raw `ls -al` output without modification
 
 ---
 
 #### 1.4 GREP Tool Implementation
 
-**Why:** GREP introduces pattern matching and optional parameters (recursive flag), completing the tool set.
+**Why:** GREP introduces optional parameters and regex pattern matching, completing the tool set.
 
-- [ ] **Implement GREP tool** (`pkg/tool/grep.go`)
-  - Accept `pattern` (required), `path` (required), `recursive` (optional, default: false)
-  - Use `/usr/bin/grep` with Basic Regular Expressions (BRE)
-  - Return `{"matches": "..."}` on success (including empty matches)
-  - Return `{"error": "..."}` on failure
+**Specification Reference:** `specs/tools/grep.md`
 
-- [ ] **Unit tests** (`pkg/tool/grep_test.go`)
-  - Test: pattern found in single file
-  - Test: pattern with recursive search
-  - Test: no matches (success with empty string)
-  - Test: error - path not found
-  - Test: error - invalid regex pattern
-  - Test: error - permission denied (if testable)
+**Tasks:**
+- [ ] Implement GREP tool in `pkg/tool/grep.go`
+- [ ] Use `/usr/bin/grep` with Basic Regular Expressions (BRE)
+- [ ] Support recursive flag
+- [ ] Write unit tests in `pkg/tool/grep_test.go`
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "pattern": {"type": "string", "description": "Search pattern (BRE regex)"},
+    "path": {"type": "string", "description": "File or directory path"},
+    "recursive": {"type": "boolean", "description": "Search recursively (default: false)"}
+  },
+  "required": ["pattern", "path"]
+}
+```
+
+**Output Format:**
+- Success: `{"matches": "grep output as string"}`
+- Error: `{"error": "error message"}`
+
+**Test Matrix:**
+
+| Test Case | Input | Expected Output Format |
+|-----------|-------|------------------------|
+| Pattern found (single file) | `{pattern: "foo", path: "test.txt"}` | `{"matches": "line_number:content"}` |
+| Pattern found (directory) | `{pattern: "foo", path: ".", recursive: true}` | `{"matches": "filename:line_number:content"}` |
+| No matches | `{pattern: "xyz123", path: "test.txt"}` | `{"matches": ""}` (success, empty) |
+| Recursive search | `{recursive: true}` | Searches subdirectories |
+| Invalid regex | `{pattern: "[invalid"}` | `{"error": "..."}` |
+| Path not found | `{path: "/nonexistent"}` | `{"error": "..."}` |
 
 **Acceptance Criteria:**
-| Scenario | Expected Result |
-|----------|-----------------|
-| Pattern found | Returns `filename:line_number:content` format |
-| Single file match | Returns `line_number:content` format (no filename) |
-| Recursive search | Searches subdirectories when `recursive=true` |
-| No matches | Returns `{"matches": ""}` (success, not error) |
-| Invalid regex | Returns `{"error": "..."}` |
-| Path not found | Returns `{"error": "..."}` |
+- Uses macOS `/usr/bin/grep`
+- Pattern is case-sensitive by default
+- No matches returns success with empty string (not error)
+- Single file format: `line_number:content`
+- Multi-file format: `filename:line_number:content`
 
 ---
 
 #### 1.5 Config & EventHandler
 
-**Why:** Configuration and event handling are prerequisites for the core harness logic.
+**Why:** Configuration and event handling are prerequisites for the core harness logic. These interfaces define the contract between components.
 
-- [ ] **Define Config struct** (`pkg/harness/config.go`)
-  - `APIKey` (required) - Anthropic API key
-  - `Model` (default: `claude-3-haiku-20240307`)
-  - `MaxTokens` (default: 4096)
-  - `SystemPrompt` (optional)
-  - `MaxTurns` (default: 10)
+**Specification Reference:** `specs/harness.md` (Configuration, EventHandler sections)
 
-- [ ] **Define EventHandler interface** (`pkg/harness/events.go`)
-  - `OnText(text string)` - called when text block completes
-  - `OnToolCall(id, name string, input json.RawMessage)` - called when tool_use block completes
-  - `OnToolResult(id, result string, isError bool)` - called when tool execution completes
+**Tasks:**
+- [ ] Define Config struct in `pkg/harness/config.go`
+- [ ] Define EventHandler interface in `pkg/harness/events.go`
+- [ ] Implement config validation and defaults
+
+**Config Struct:**
+```go
+type Config struct {
+    APIKey       string  // Required - Anthropic API key
+    Model        string  // Default: "claude-3-haiku-20240307"
+    MaxTokens    int     // Default: 4096
+    SystemPrompt string  // Optional
+    MaxTurns     int     // Default: 10
+}
+```
+
+**EventHandler Interface:**
+```go
+type EventHandler interface {
+    OnText(text string)
+    OnToolCall(id string, name string, input json.RawMessage)
+    OnToolResult(id string, result string, isError bool)
+}
+```
 
 **Acceptance Criteria:**
-- Config struct has all required fields with correct defaults
-- EventHandler interface is implementable
-- Nil EventHandler is accepted (silent operation)
+| Requirement | Verification |
+|-------------|--------------|
+| APIKey required | Error if empty |
+| Model defaults | `"claude-3-haiku-20240307"` when not specified |
+| MaxTokens defaults | `4096` when not specified |
+| MaxTurns defaults | `10` when not specified |
+| SystemPrompt optional | Empty string is valid |
+| Nil EventHandler valid | Harness operates silently without handler |
 
 ---
 
 #### 1.6 Core Harness Implementation
 
-**Why:** The harness is the central orchestrator connecting the API, tools, and event handler.
+**Why:** The harness is the central orchestrator connecting the API, tools, and event handler. It manages conversation state and concurrency.
 
-- [ ] **Implement Harness struct** (`pkg/harness/harness.go`)
-  - Constructor: `NewHarness(config Config, tools []Tool, handler EventHandler) *Harness`
-  - Conversation state: ordered list of messages
-  - Concurrency control: mutex to ensure single Prompt at a time
+**Specification Reference:** `specs/harness.md` (Go API, Conversation State sections)
 
-- [ ] **Implement Prompt method**
-  - `func (h *Harness) Prompt(ctx context.Context, content string) error`
-  - Append user message to history
-  - Emit `user` event (if handler != nil)
-  - Run agent loop until termination
-  - Return error if API fails or context cancelled
-  - Return error if another Prompt is already running
+**Tasks:**
+- [ ] Implement Harness struct in `pkg/harness/harness.go`
+- [ ] Implement constructor `NewHarness(config Config, tools []Tool, handler EventHandler) *Harness`
+- [ ] Implement conversation state management (ordered message list)
+- [ ] Implement concurrency control (mutex for single Prompt at a time)
+- [ ] Implement `Prompt(ctx context.Context, content string) error`
+- [ ] Implement `Cancel()` method
 
-- [ ] **Implement Cancel method**
-  - `func (h *Harness) Cancel()`
-  - Cancel context of running prompt
-  - Safe to call when no prompt running
+**Harness Struct Requirements:**
+- Holds Anthropic client instance
+- Maintains conversation history (never modified/removed during session)
+- Tracks current running prompt context for cancellation
+- Registers all tools in API requests
+
+**Prompt Method Behavior:**
+1. Return error if another Prompt is running
+2. Append user message to conversation history
+3. Emit `user` event (if handler != nil)
+4. Run agent loop until termination
+5. Return error if API fails or context cancelled
+
+**Cancel Method Behavior:**
+- Cancels context of running prompt
+- Safe to call when no prompt is running (no-op)
 
 **Acceptance Criteria:**
-| Requirement | Test |
-|-------------|------|
-| Config defaults | Harness initializes with correct defaults when optional fields omitted |
-| Tool registration | All tools appear in API requests with correct schemas |
-| Concurrency | Second Prompt() call returns error while first is running |
-| Cancellation | Cancel() stops running prompt; safe when idle |
+| Requirement | Verification |
+|-------------|--------------|
+| Concurrency control | Second Prompt() returns error while first runs |
+| Tool registration | All tools appear in API requests with schemas |
+| Conversation persistence | Messages preserved across turns within session |
+| Cancellation works | Cancel() stops running prompt |
+| Cancellation safe | Cancel() when idle does not panic |
+| User event emitted | OnText not called, user event separate |
 
 ---
 
 #### 1.7 Agent Loop & Streaming
 
-**Why:** The agent loop is the core algorithm that drives the harness. It must correctly implement streaming with proper event emission timing.
+**Why:** The agent loop is the core algorithm driving the harness. Streaming ensures real-time event emission.
 
-- [ ] **Streaming API integration**
-  - Use `client.Messages.NewStreaming()` from anthropic-sdk-go
-  - Accumulate deltas with `message.Accumulate(event)`
-  - Process `ContentBlockStopEvent` for text blocks → emit `OnText`
-  - Process `ContentBlockStopEvent` for tool_use blocks → emit `OnToolCall`
+**Specification Reference:** `specs/harness.md` (Agent Loop, Streaming, Tool Execution sections)
 
-- [ ] **Tool execution logic**
-  - Execute tools sequentially in response order
-  - Fail-fast: stop on first tool error
-  - Serialize all results (including errors) as tool result messages
-  - Tool errors go back to agent (not thrown as exceptions)
-  - Emit `OnToolResult` after each tool execution
+**Tasks:**
+- [ ] Integrate streaming API using `client.Messages.NewStreaming()`
+- [ ] Accumulate deltas with `message.Accumulate(event)`
+- [ ] Emit events on `ContentBlockStopEvent` (not before)
+- [ ] Implement sequential tool execution with fail-fast
+- [ ] Implement termination conditions
+- [ ] Write unit/integration tests
 
-- [ ] **Termination conditions**
-  - No tool calls in response → end loop
-  - MaxTurns exceeded → end loop
-  - API error → return error
-  - Context cancelled → return error
+**Event Emission Timing (Critical):**
+| API Event | Harness Action |
+|-----------|----------------|
+| `ContentBlockStopEvent` (text) | `OnText(completeText)` |
+| `ContentBlockStopEvent` (tool_use) | `OnToolCall(id, name, input)` |
+| Tool execution completes | `OnToolResult(id, result, isError)` |
 
-- [ ] **Unit/Integration tests** (`pkg/harness/harness_test.go`)
-  - Test: text-only response terminates loop
-  - Test: tool call triggers execution and loop continuation
-  - Test: multiple tool calls execute sequentially
-  - Test: first tool error stops remaining tools
-  - Test: MaxTurns limit enforced
-  - Test: cancellation works mid-loop
-  - Test: events emitted in correct order
+**Tool Execution Rules:**
+1. Execute tools sequentially in response order
+2. If tool returns error, stop immediately (fail-fast)
+3. Return all results so far (including error) to agent
+4. Remaining tools not executed
+5. Tool errors serialized as tool result messages (not exceptions)
+
+**Termination Conditions:**
+1. No tool calls in response → end loop
+2. MaxTurns exceeded → end loop
+3. API error → return error
+4. Context cancelled → return error
+
+**Test Matrix:**
+
+| Test Case | Expected Behavior |
+|-----------|-------------------|
+| Text-only response | Loop terminates after single turn |
+| Single tool call | Tool executes, result sent, loop continues |
+| Multiple tool calls | All execute sequentially |
+| First tool error | Remaining tools skipped, error sent to agent |
+| MaxTurns = 3, 4 turns needed | Loop terminates after turn 3 |
+| Context cancelled mid-turn | Returns context.Canceled error |
+| Event sequence | OnText → OnToolCall → OnToolResult order |
 
 **Acceptance Criteria:**
-| Requirement | Test |
-|-------------|------|
-| Streaming | Events emitted on ContentBlockStopEvent, not before |
-| Tool execution | Tools execute sequentially; first error stops execution |
-| Error propagation | Tool errors serialized to agent, not thrown as exceptions |
-| MaxTurns | Agent loop terminates after MaxTurns iterations |
-| Event order | OnText → OnToolCall → OnToolResult sequence maintained |
+| Requirement | Verification |
+|-------------|--------------|
+| Streaming accumulation | Events only on ContentBlockStopEvent |
+| Sequential execution | Tools run in order, not parallel |
+| Fail-fast | First error stops remaining tools |
+| Error propagation | Errors go to agent, not thrown |
+| MaxTurns enforced | Loop stops at limit |
+| Event order | Text → ToolCall → ToolResult sequence |
 
 ---
 
@@ -245,36 +347,46 @@ This document outlines the implementation plan for the Harness system - an AI ag
 
 **Why:** The HTTP server is the interface between harness and TUI, exposing SSE and REST endpoints.
 
-- [ ] **SSE endpoint** (`pkg/server/sse.go`)
-  - `GET /events`
-  - Content-Type: `text/event-stream`
-  - Event format: `data: {"type": "...", ...}\n\n`
-  - Heartbeat every 30 seconds: `: heartbeat\n`
-  - Event types: `user`, `text`, `tool_call`, `tool_result`, `reasoning`, `status`
+**Specification Reference:** `specs/harness.md` (HTTP Server section)
 
-- [ ] **REST endpoints** (`pkg/server/server.go`)
-  - `POST /prompt` - Body: `{"content": "..."}`
-  - `POST /cancel` - Empty body
+**Tasks:**
+- [ ] Implement HTTP server in `pkg/server/server.go`
+- [ ] Implement SSE endpoint in `pkg/server/sse.go`
+- [ ] Implement EventHandler that broadcasts to SSE clients
+- [ ] Handle multiple concurrent SSE client connections
+- [ ] Write server tests in `pkg/server/server_test.go`
 
-- [ ] **Event bridging**
-  - Implement EventHandler that broadcasts to SSE clients
-  - Include timestamps in all events
-  - Handle multiple SSE client connections
+**SSE Endpoint (`GET /events`):**
+- Content-Type: `text/event-stream`
+- Event format: `data: {JSON}\n\n`
+- Heartbeat every 30 seconds: `: heartbeat\n`
 
-- [ ] **Server tests** (`pkg/server/server_test.go`)
-  - Test: SSE connection receives events
-  - Test: heartbeat sent every 30 seconds
-  - Test: POST /prompt triggers harness
-  - Test: POST /cancel stops running prompt
+**Event Types:**
+```json
+{"type": "user", "content": "...", "timestamp": 1234567890}
+{"type": "text", "content": "...", "timestamp": 1234567890}
+{"type": "tool_call", "id": "...", "name": "...", "input": {...}, "timestamp": 1234567890}
+{"type": "tool_result", "id": "...", "result": "...", "isError": false, "timestamp": 1234567890}
+{"type": "reasoning", "content": "...", "timestamp": 1234567890}
+{"type": "status", "state": "...", "message": "..."}
+```
+
+**REST Endpoints:**
+| Method | Path | Request Body | Response |
+|--------|------|--------------|----------|
+| POST | `/prompt` | `{"content": "..."}` | 200 OK or error |
+| POST | `/cancel` | (empty) | 200 OK |
 
 **Acceptance Criteria:**
-| Requirement | Test |
-|-------------|------|
-| SSE endpoint | Connects and streams events correctly |
-| Heartbeat | Sent every 30 seconds to prevent timeout |
-| Event format | All events include type and timestamp |
-| REST /prompt | Accepts prompt and returns success |
-| REST /cancel | Cancels running agent |
+| Requirement | Verification |
+|-------------|--------------|
+| SSE connects | Client receives event stream |
+| Heartbeat sent | Every 30 seconds, `: heartbeat\n` |
+| Event format | All events have `type` and `timestamp` |
+| Multiple clients | Broadcast to all connected SSE clients |
+| POST /prompt | Triggers harness.Prompt() |
+| POST /cancel | Triggers harness.Cancel() |
+| Error handling | HTTP errors return appropriate status codes |
 
 ---
 
@@ -284,18 +396,68 @@ This document outlines the implementation plan for the Harness system - an AI ag
 
 **Why:** Establish TypeScript project structure with proper tooling before building components.
 
-- [ ] **Initialize project** (`tui/`)
-  - TypeScript configuration (`tsconfig.json`)
-  - Package dependencies: `@opentui/core`, `@opentui/solid`, `solid-js`, `zod`
-  - Build configuration
+**Specification Reference:** `specs/tui.md` (Packages section)
 
-- [ ] **Event schemas** (`tui/src/schemas/events.ts`)
-  - Zod schemas for all event types: `user`, `text`, `tool_call`, `tool_result`, `reasoning`, `status`
-  - Type inference from schemas
+**Tasks:**
+- [ ] Initialize project in `tui/` directory
+- [ ] Configure TypeScript (`tsconfig.json`)
+- [ ] Add dependencies: `@opentui/core`, `@opentui/solid`, `solid-js`, `zod`
+- [ ] Define Zod schemas for all event types in `tui/src/schemas/events.ts`
+
+**Event Schemas (Zod):**
+```typescript
+// User event
+const UserEventSchema = z.object({
+  type: z.literal("user"),
+  content: z.string(),
+  timestamp: z.number()
+})
+
+// Text event
+const TextEventSchema = z.object({
+  type: z.literal("text"),
+  content: z.string(),
+  timestamp: z.number()
+})
+
+// Tool call event
+const ToolCallEventSchema = z.object({
+  type: z.literal("tool_call"),
+  id: z.string(),
+  name: z.string(),
+  input: z.record(z.unknown()),
+  timestamp: z.number()
+})
+
+// Tool result event
+const ToolResultEventSchema = z.object({
+  type: z.literal("tool_result"),
+  id: z.string(),
+  result: z.string(),
+  isError: z.boolean(),
+  timestamp: z.number()
+})
+
+// Reasoning event
+const ReasoningEventSchema = z.object({
+  type: z.literal("reasoning"),
+  content: z.string(),
+  timestamp: z.number()
+})
+
+// Status event
+const StatusEventSchema = z.object({
+  type: z.literal("status"),
+  state: z.string(),
+  message: z.string().optional()
+})
+```
 
 **Acceptance Criteria:**
-- Project builds without errors
-- Zod schemas validate sample events correctly
+- Project builds without errors (`npm run build`)
+- TypeScript strict mode enabled
+- All Zod schemas validate sample events correctly
+- Type inference from schemas works
 
 ---
 
@@ -303,24 +465,36 @@ This document outlines the implementation plan for the Harness system - an AI ag
 
 **Why:** Reliable communication is essential before building UI components.
 
-- [ ] **SSE client** (`tui/src/lib/sse.ts`)
-  - Connect to `GET /events`
-  - Parse event stream
-  - Validate events with Zod schemas
-  - Handle reconnection on disconnect
+**Specification Reference:** `specs/tui.md` (Communication section)
 
-- [ ] **REST client** (`tui/src/lib/api.ts`)
-  - `submitPrompt(content: string): Promise<void>`
-  - `cancelAgent(): Promise<void>`
-  - Error handling for failed requests
+**Tasks:**
+- [ ] Implement SSE client in `tui/src/lib/sse.ts`
+- [ ] Implement REST client in `tui/src/lib/api.ts`
+- [ ] Add automatic reconnection on disconnect
+- [ ] Validate events with Zod schemas
+
+**SSE Client Requirements:**
+- Connect to `GET /events`
+- Parse `data: {...}` events
+- Validate against Zod schemas
+- Emit typed events to handlers
+- Auto-reconnect on disconnect
+
+**REST Client Requirements:**
+```typescript
+async function submitPrompt(content: string): Promise<void>
+async function cancelAgent(): Promise<void>
+```
 
 **Acceptance Criteria:**
-| Requirement | Test |
-|-------------|------|
-| SSE connection | Connects to /events and receives events |
-| Reconnection | Automatically reconnects on disconnect |
-| Event validation | Invalid events logged/handled gracefully |
-| REST calls | submitPrompt and cancelAgent work correctly |
+| Requirement | Verification |
+|-------------|--------------|
+| SSE connects | Receives events from `/events` |
+| Event parsing | JSON parsed correctly |
+| Schema validation | Invalid events logged/rejected gracefully |
+| Reconnection | Auto-reconnects after disconnect |
+| submitPrompt works | POST /prompt succeeds |
+| cancelAgent works | POST /cancel succeeds |
 
 ---
 
@@ -328,24 +502,42 @@ This document outlines the implementation plan for the Harness system - an AI ag
 
 **Why:** Centralized state ensures UI components react correctly to events.
 
-- [ ] **Conversation store** (`tui/src/stores/conversation.ts`)
-  - Parts array: `UserPart | TextPart | ToolPart | ReasoningPart`
-  - Reactive updates via Solid.js signals
-  - Event handler that updates store
+**Specification Reference:** `specs/tui.md` (Parts section)
 
-- [ ] **Status store** (`tui/src/stores/status.ts`)
-  - States: idle, thinking, running tool, error
-  - Current tool name when executing
+**Tasks:**
+- [ ] Implement conversation store in `tui/src/stores/conversation.ts`
+- [ ] Implement status store in `tui/src/stores/status.ts`
+- [ ] Implement input store in `tui/src/stores/input.ts`
+- [ ] Use Solid.js signals for reactivity
 
-- [ ] **Input store** (`tui/src/stores/input.ts`)
-  - Current input text
-  - History array (max 100)
-  - History navigation index
+**Part Types:**
+```typescript
+type UserPart = { type: "user"; content: string; timestamp: number }
+type TextPart = { type: "text"; content: string; timestamp: number }
+type ToolPart = {
+  type: "tool"; id: string; name: string;
+  input: Record<string, unknown>; result: string | null;
+  isError: boolean; timestamp: number
+}
+type ReasoningPart = { type: "reasoning"; content: string; timestamp: number }
+```
+
+**Status States:**
+- `idle` - No indicator shown
+- `thinking` - "Thinking..."
+- `running_tool` - "Running: {tool_name}..."
+- `error` - "Error: {message}"
+
+**Input Store:**
+- Current input text
+- History array (max 100 entries)
+- History navigation index
 
 **Acceptance Criteria:**
 - Stores update reactively when events arrive
 - Status reflects current agent state
-- Input history persists and navigates correctly
+- Input history navigates correctly (Up/Down)
+- Parts array maintains order
 
 ---
 
@@ -353,28 +545,39 @@ This document outlines the implementation plan for the Harness system - an AI ag
 
 **Why:** Agent text output must be formatted correctly for terminal display.
 
-- [ ] **Markdown renderer** (`tui/src/lib/markdown.ts`)
-  - `**bold**` → terminal bold
-  - `*italic*` → terminal dim/italic
-  - `` `code` `` → highlighted background
-  - ```` ``` ```` blocks → yellow background (#3d3a28)
-  - `- item` / `* item` → bullet (•)
-  - `1. item` → numbered list
-  - `[text](url)` → underlined
-  - `# Heading` → bold
-  - Nested formatting support
+**Specification Reference:** `specs/tui.md` (Markdown Rendering section)
+
+**Tasks:**
+- [ ] Implement markdown renderer in `tui/src/lib/markdown.ts`
+- [ ] Support nested formatting
+- [ ] Return terminal-compatible styled text
+
+**Markdown Support Matrix:**
+
+| Markdown | Terminal Rendering |
+|----------|-------------------|
+| `**bold**` | Terminal bold |
+| `*italic*` | Terminal dim/italic |
+| `` `inline code` `` | Highlighted background |
+| ```` ``` ```` blocks | Yellow background (#3d3a28) |
+| `- item` / `* item` | Bullet point (•) |
+| `1. item` | Numbered list |
+| `[text](url)` | Underlined text |
+| `# Heading` | Bold text |
+| Nested `**bold *italic***` | Both styles applied |
 
 **Acceptance Criteria:**
-| Markdown | Rendered |
-|----------|----------|
-| `**bold**` | Bold text |
-| `*italic*` | Italic/dim text |
-| `` `inline code` `` | Highlighted background |
+| Input | Output |
+|-------|--------|
+| `**bold**` | Bold terminal text |
+| `*italic*` | Dim/italic terminal text |
+| `` `code` `` | Highlighted background |
 | Code blocks | Yellow background |
-| Lists | Proper bullets/numbers |
-| Links | Underlined text |
-| Headings | Bold text |
-| Nested `**bold *italic***` | Both applied |
+| `- item` | `• item` |
+| `1. item` | `1. item` (numbered) |
+| `[link](url)` | Underlined text |
+| `# Heading` | Bold text |
+| Unknown markdown | Passed through as-is |
 
 ---
 
@@ -382,45 +585,41 @@ This document outlines the implementation plan for the Harness system - an AI ag
 
 **Why:** Components are built bottom-up, starting with primitives.
 
-- [ ] **Part components** (`tui/src/components/parts/`)
-  - `UserPart` - Cyan accent, full prompt text
-  - `TextPart` - Markdown rendered
-  - `ToolPart` - Tool name, input JSON, result (truncated to 100 lines), error styling
-  - `ReasoningPart` - Dimmed/italicized
+**Specification Reference:** `specs/tui.md` (Parts, Layout sections)
 
-- [ ] **Conversation view** (`tui/src/components/Conversation.tsx`)
-  - Scrollable area with all parts
-  - Auto-scroll on new content
-  - Pause auto-scroll when user scrolls up
-  - Resume when scrolled to bottom
+**Tasks:**
+- [ ] Implement part components in `tui/src/components/parts/`
+  - [ ] `UserPart.tsx` - Cyan accent, full prompt text
+  - [ ] `TextPart.tsx` - Markdown rendered
+  - [ ] `ToolPart.tsx` - Tool name, input, result (truncated), errors
+  - [ ] `ReasoningPart.tsx` - Dimmed/italicized
+- [ ] Implement `Conversation.tsx` - Scrollable area with auto-scroll
+- [ ] Implement `InputBar.tsx` - Text input with history
+- [ ] Implement `Status.tsx` - Status indicator
+- [ ] Implement `Help.tsx` - Centered modal overlay
 
-- [ ] **Input bar** (`tui/src/components/InputBar.tsx`)
-  - Text input with cursor
-  - Word-boundary wrapping
-  - Multiline with Ctrl+Enter
-  - Submit with Enter
-  - History navigation (Up/Down)
-  - Clear with Ctrl+U
+**ToolPart Display Rules:**
+- Tool name prominently shown (yellow)
+- Input parameters displayed in full (JSON)
+- Result truncated to **100 lines maximum**
+- Truncation indicator: `... (X more lines)`
+- Errors in red
 
-- [ ] **Status indicator** (`tui/src/components/Status.tsx`)
-  - "Thinking..." when agent responding
-  - "Running: {tool_name}..." when tool executing
-  - "Error: {message}" on errors
-
-- [ ] **Help overlay** (`tui/src/components/Help.tsx`)
-  - Centered modal
-  - All keybindings listed
-  - Dismiss on any keypress
+**Scrolling Behavior:**
+- Auto-scroll on new content
+- Pause auto-scroll when user scrolls up
+- Resume when scrolled to bottom
+- Optional: "↓ New content" indicator
 
 **Acceptance Criteria:**
 | Component | Requirement |
 |-----------|-------------|
 | UserPart | Cyan styling, full text visible |
 | TextPart | Markdown renders correctly |
-| ToolPart | Name yellow, result truncated at 100 lines, errors red |
+| ToolPart | Name yellow, result ≤100 lines, errors red |
 | ReasoningPart | Dimmed/italic styling |
 | Conversation | Auto-scroll with manual override |
-| InputBar | All input features work |
+| InputBar | Text entry, history, multiline |
 | Status | Shows correct state |
 | Help | Modal displays and dismisses |
 
@@ -430,24 +629,39 @@ This document outlines the implementation plan for the Harness system - an AI ag
 
 **Why:** Final assembly of components into the complete application.
 
-- [ ] **Main layout** (`tui/src/App.tsx`)
-  - Conversation region (scrollable)
-  - Input region (bottom)
-  - Status region
+**Specification Reference:** `specs/tui.md` (Layout, Theme sections)
 
-- [ ] **Theme** (`tui/src/theme.ts`)
-  - Background: #1a1a1a
-  - Text: #e0e0e0
-  - User prompt: Cyan
-  - Tool name: Yellow
-  - Error: Red
-  - Reasoning: Dimmed gray
-  - Code block bg: #3d3a28
-  - Status: Yellow
+**Tasks:**
+- [ ] Implement main layout in `tui/src/App.tsx`
+- [ ] Define theme in `tui/src/theme.ts`
+- [ ] Handle terminal resize
+
+**Layout Regions:**
+| Region | Position | Content |
+|--------|----------|---------|
+| Conversation | Top (scrollable) | All parts |
+| Input | Bottom | Text input bar |
+| Status | Above/within input | Status indicator |
+
+**Theme Colors:**
+| Element | Color |
+|---------|-------|
+| Background | #1a1a1a (dark gray) |
+| Text | #e0e0e0 (light gray) |
+| User prompt | Cyan accent |
+| Agent text | Light gray (default) |
+| Tool name | Yellow |
+| Tool result | Light gray |
+| Error | Red |
+| Reasoning | Dimmed gray |
+| Input border | Subtle gray |
+| Status | Yellow |
+| Code block bg | #3d3a28 |
 
 **Acceptance Criteria:**
 - Layout renders correctly at various terminal sizes
 - Colors match specification
+- Resize handled gracefully
 
 ---
 
@@ -455,20 +669,33 @@ This document outlines the implementation plan for the Harness system - an AI ag
 
 **Why:** Keyboard interaction is critical for terminal UIs.
 
-- [ ] **Implement keybindings**
-  - `Enter` - Submit prompt
-  - `Ctrl+Enter` - Insert newline
-  - `Ctrl+C` - Cancel agent / Exit if idle
-  - `Up/Down` - Prompt history (in input)
-  - `PageUp/PageDown` - Scroll conversation
-  - `Ctrl+U` - Clear input
-  - `Ctrl+Shift+C` - Copy selection
-  - `?` / `F1` - Toggle help
-  - `Esc` - Close help / Cancel selection
+**Specification Reference:** `specs/tui.md` (Keybindings, Input Behavior sections)
+
+**Tasks:**
+- [ ] Implement all keybindings
+- [ ] Ensure no conflicts between bindings
+
+**Keybinding Matrix:**
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Submit prompt |
+| `Ctrl+Enter` | Insert newline in prompt |
+| `Ctrl+C` | Cancel running agent / Exit if idle |
+| `Up` (in input) | Previous prompt from history |
+| `Down` (in input) | Next prompt from history |
+| `PageUp` | Scroll conversation up |
+| `PageDown` | Scroll conversation down |
+| `Ctrl+U` | Clear input |
+| `Ctrl+Shift+C` | Copy selected text |
+| `?` or `F1` | Toggle help screen |
+| `Esc` | Close help / Cancel selection |
 
 **Acceptance Criteria:**
 - All keybindings function as specified
-- No conflicts between keybindings
+- No key conflicts
+- Help shows all bindings
+- History navigation works at input boundaries
 
 ---
 
@@ -476,14 +703,22 @@ This document outlines the implementation plan for the Harness system - an AI ag
 
 **Why:** User experience improvement through session persistence.
 
-- [ ] **Prompt history** (`tui/src/lib/history.ts`)
-  - Save to `~/.harness/prompt_history`
-  - Load on startup
-  - Max 100 prompts (FIFO)
+**Specification Reference:** `specs/tui.md` (Prompt History section)
+
+**Tasks:**
+- [ ] Implement history persistence in `tui/src/lib/history.ts`
+- [ ] Save to `~/.harness/prompt_history`
+- [ ] Load on startup
+- [ ] Enforce max 100 prompts (FIFO)
 
 **Acceptance Criteria:**
-- History persists between sessions
-- Oldest entries removed when limit exceeded
+| Requirement | Verification |
+|-------------|--------------|
+| Persistence | History survives TUI restart |
+| File location | `~/.harness/prompt_history` |
+| Max entries | 100 prompts maximum |
+| FIFO behavior | Oldest removed when limit exceeded |
+| Load on startup | Previous prompts available via Up arrow |
 
 ---
 
@@ -576,31 +811,42 @@ require (
 
 ### Unit Tests
 
-- Tool implementations: file operations, edge cases, error conditions
-- Harness: config validation, event emission timing, termination conditions
-- Markdown parser: all formatting combinations
-- Zod schemas: valid and invalid event parsing
+| Component | Test Focus |
+|-----------|------------|
+| READ tool | File operations, line ranges, error conditions |
+| LIST_DIR tool | Directory listing, hidden files, errors |
+| GREP tool | Pattern matching, recursive, empty results |
+| Config | Defaults, validation, required fields |
+| Harness | Concurrency, cancellation, event emission |
+| Markdown | All formatting combinations |
+| Zod schemas | Valid and invalid event parsing |
 
 ### Integration Tests
 
-- Harness + Tools: full agent loop with mock API
-- TUI + Harness: SSE event flow, REST commands
-- History persistence: write/read cycle
+| Test | Components |
+|------|------------|
+| Agent loop | Harness + Tools + Mock API |
+| HTTP flow | Server + SSE + REST |
+| Full stack | TUI + Server + Harness |
+| Persistence | History write/read cycle |
 
 ### Manual Testing
 
-- Full conversation flow with real API
-- All keybindings
+- Full conversation flow with real Anthropic API
+- All keybindings in terminal
 - Terminal resize handling
-- Long outputs and truncation
+- Long outputs and truncation behavior
 
 ---
 
 ## Key Implementation Notes
 
-- **Tool choice is always `auto`** — not configurable per spec
-- **Streaming is required** — events must be emitted on block completion, not message completion
-- **Error handling philosophy** — tool errors go to agent for intelligent handling, not as exceptions
-- **Sequential tool execution** — no parallel execution; fail-fast on error
-- **History limit** — 100 prompts max, oldest removed first (FIFO)
-- **Event emission** — use `ContentBlockStopEvent` from streaming API, accumulate with `message.Accumulate(event)`
+1. **Tool choice is always `auto`** — Not configurable per spec
+2. **Streaming is required** — Events emitted on block completion, not message completion
+3. **Error handling philosophy** — Tool errors go to agent for intelligent handling, not as exceptions
+4. **Sequential tool execution** — No parallel execution; fail-fast on error
+5. **History limit** — 100 prompts max, oldest removed first (FIFO)
+6. **Event emission timing** — Use `ContentBlockStopEvent` from streaming API, accumulate with `message.Accumulate(event)`
+7. **Heartbeat interval** — 30 seconds for SSE to prevent timeout
+8. **Line indexing** — 1-indexed for READ tool (first line is line 1)
+9. **Result truncation** — Tool results truncated at 100 lines in TUI
