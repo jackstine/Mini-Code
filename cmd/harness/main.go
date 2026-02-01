@@ -48,14 +48,13 @@ func main() {
 	}
 
 	// Create harness with nil handler initially
-	// The server will set up the SSE event handler
 	h, err := harness.NewHarness(config, tools, nil)
 	if err != nil {
 		logger.Error("harness", "Failed to create harness", log.F("error", err.Error()))
 		stdlog.Fatalf("Failed to create harness: %v", err)
 	}
 
-	// Create server
+	// Create server (only once)
 	addr := getEnvOrDefault("HARNESS_ADDR", ":8080")
 	srv := server.NewServer(h, addr, logger)
 
@@ -63,18 +62,12 @@ func main() {
 	// This logs agent interactions to file while still broadcasting to SSE clients
 	eventHandler := log.NewLoggingEventHandler(srv.EventHandler(), agentLogger)
 
-	// Re-create harness with the logging event handler
-	h, err = harness.NewHarness(config, tools, eventHandler)
-	if err != nil {
-		logger.Error("harness", "Failed to create harness with event handler", log.F("error", err.Error()))
-		stdlog.Fatalf("Failed to create harness with event handler: %v", err)
-	}
+	// Set the event handler on the existing harness
+	// This ensures events are broadcast to the same server instance handling HTTP requests
+	h.SetEventHandler(eventHandler)
 
 	// Set logger on harness for API and tool logging
 	h.SetLogger(logger)
-
-	// Update server with the new harness
-	srv = server.NewServer(h, addr, logger)
 
 	// Set up user prompt logging for agent interaction log
 	srv.SetUserPromptLogger(eventHandler.LogUserPrompt)

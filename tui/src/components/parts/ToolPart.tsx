@@ -5,7 +5,7 @@ import { truncateLines } from "../../lib/markdown"
 
 interface Props {
   name: string
-  input: Record<string, unknown>
+  input: unknown
   result: string | null
   isError: boolean
 }

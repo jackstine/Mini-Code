@@ -8,7 +8,7 @@ import type { Event } from "../schemas/events"
 export type Part =
   | { type: "user"; content: string; timestamp: number }
   | { type: "text"; content: string; timestamp: number }
-  | { type: "tool"; id: string; name: string; input: Record<string, unknown>; result: string | null; isError: boolean; timestamp: number }
+  | { type: "tool"; id: string; name: string; input: unknown; result: string | null; isError: boolean; timestamp: number }
   | { type: "reasoning"; content: string; timestamp: number }
 
 const [parts, setParts] = createStore<Part[]>([])

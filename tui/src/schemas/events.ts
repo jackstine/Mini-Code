@@ -17,7 +17,7 @@ const ToolCallEventSchema = z.object({
   type: z.literal("tool_call"),
   id: z.string(),
   name: z.string(),
-  input: z.record(z.unknown()),
+  input: z.unknown(), // Accept any valid JSON type, not just objects
   timestamp: z.number()
 })
 

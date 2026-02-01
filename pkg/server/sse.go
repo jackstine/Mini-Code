@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/user/harness/pkg/log"
 )
 
 // Event represents a server-sent event.
@@ -91,6 +93,10 @@ func (s *Server) broadcast(event Event) {
 		case client.events <- data:
 		default:
 			// Client buffer full, skip (non-blocking)
+			s.logger.Warn("sse", "Event dropped - client buffer full",
+				log.F("client_id", client.id),
+				log.F("event_type", event.Type),
+			)
 		}
 	}
 }
