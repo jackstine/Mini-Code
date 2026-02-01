@@ -15,7 +15,7 @@ interface Props {
 export const Help: Component<Props> = (props) => {
   const dimensions = useTerminalDimensions()
   const width = 50
-  const height = 16
+  const height = 17
 
   const left = () => Math.floor((dimensions().width - width) / 2)
   const top = () => Math.floor((dimensions().height - height) / 2)
@@ -28,8 +28,9 @@ export const Help: Component<Props> = (props) => {
     ["PageUp/Down", "Scroll conversation"],
     ["Home/End", "Scroll to top/bottom"],
     ["Ctrl+U", "Clear input"],
+    ["Ctrl+Shift+C", "Copy selection"],
     ["? or F1", "Toggle help"],
-    ["Esc", "Close help"],
+    ["Esc", "Close / Cancel"],
   ]
 
   return (
