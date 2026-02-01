@@ -762,3 +762,8 @@ Tools must be converted to Anthropic API format when registering with the harnes
 - **Errors:** None
 - **All Tests Pass:** Yes
 - **Notes:** Added OnReasoning method to EventHandler interface. Updated harness.go to emit reasoning events when ThinkingBlock is encountered. Updated SSE handler to broadcast reasoning events. Updated test mock to implement new interface method.
+
+### 2026-02-01 - Implement Text Selection and Copy (Ctrl+Shift+C)
+- **Errors:** None
+- **All Tests Pass:** Yes
+- **Notes:** Implemented text selection and clipboard copy per specs. Created tui/src/stores/selection.ts for selection state. Created tui/src/lib/clipboard.ts using OSC 52 escape sequence for clipboard access. Updated App.tsx with useSelectionHandler hook and Ctrl+Shift+C keybinding. Escape clears selection.

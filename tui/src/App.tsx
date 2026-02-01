@@ -1,5 +1,5 @@
 import { createSignal, onMount, onCleanup } from "solid-js"
-import { useKeyboard, useRenderer } from "@opentui/solid"
+import { useKeyboard, useRenderer, useSelectionHandler } from "@opentui/solid"
 import { Conversation } from "./components/Conversation"
 import { InputBar } from "./components/InputBar"
 import { Status } from "./components/Status"
@@ -11,6 +11,8 @@ import { cancelAgent } from "./lib/api"
 import { loadHistory } from "./lib/history"
 import { navigateHistoryUp, navigateHistoryDown, clearInput } from "./stores/input"
 import { scrollPageUp, scrollPageDown, scrollToTop, scrollToBottom } from "./stores/scroll"
+import { updateSelection, clearSelection, getSelectedText } from "./stores/selection"
+import { copyToClipboard } from "./lib/clipboard"
 import { theme } from "./theme"
 import type { Event } from "./schemas/events"
 
@@ -45,6 +47,14 @@ export const App = () => {
     }
   }
 
+  // Handle text selection events
+  useSelectionHandler((selection) => {
+    // Update selection store with selected text
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const text = (selection as any).getText?.() ?? ""
+    updateSelection(text)
+  })
+
   onMount(() => {
     // Load persisted history
     loadHistory()
@@ -71,9 +81,19 @@ export const App = () => {
       return
     }
 
-    // Escape: Close help
+    // Escape: Close help / Cancel selection
     if (key.name === "escape") {
       setShowHelp(false)
+      clearSelection()
+      return
+    }
+
+    // Ctrl+Shift+C: Copy selected text to clipboard
+    if (key.ctrl && key.shift && key.name === "c") {
+      const text = getSelectedText()
+      if (text) {
+        copyToClipboard(text)
+      }
       return
     }
 
