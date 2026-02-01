@@ -751,3 +751,9 @@ Tools must be converted to Anthropic API format when registering with the harnes
 - **TypeScript Compiles:** Yes
 - **Tests Pass:** Yes (Go tests, TypeScript typecheck)
 - **Notes:** Implemented keyboard scrolling (PageUp/PageDown/Home/End) per specs/scrolling.md. Created tui/src/stores/scroll.ts for scroll state management. Updated Conversation.tsx to expose scrollbox ref. Updated App.tsx with keyboard handlers for scroll navigation.
+
+### 2026-02-01 - Markdown Rendering for TextPart
+- **Errors:** None
+- **TypeScript Compiles:** Yes
+- **Tests Pass:** Yes (Go tests, TypeScript typecheck)
+- **Notes:** Implemented markdown rendering for TextPart component. Created tui/src/lib/markdown.tsx with parser and renderer. Supports: bold, italic, inline code, code blocks, headings, bullet lists, numbered lists, links.
