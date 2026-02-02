@@ -1,6 +1,9 @@
-# Harness
+## Mini-Code 
 
-A terminal-based AI agent application that enables conversational interaction with Claude through a Text User Interface (TUI).
+![Mini Code Screenshot](assets/mini-code-screenshot.png)
+
+
+A mini version of Claude Code. A terminal-based AI agent application that enables conversational interaction with Claude through a Text User Interface (TUI).
 
 ## Features
 
@@ -13,11 +16,6 @@ A terminal-based AI agent application that enables conversational interaction wi
 - Markdown rendering in the terminal
 - Conversation and prompt history
 - Configurable logging for debugging
-
-## Screenshot
-
-![Mini Code Screenshot](assets/mini-code-screenshot.png)
-
 - Conversation and prompt history
 - Configurable logging for debugging
 
