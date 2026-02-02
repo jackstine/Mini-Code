@@ -8,12 +8,12 @@ This plan covers the implementation of features from commits 756e1e7 and 50cb96d
 
 ## Current State
 
-**Status: NOT STARTED**
+**Status: IN PROGRESS**
 
 ### Existing Infrastructure
 - Tool interface defined in `pkg/tool/tool.go`
-- Three tools implemented: `read`, `list_dir`, `grep`
-- Tool registration in `cmd/harness/main.go` (lines 44-48)
+- Seven tools implemented: `read`, `list_dir`, `grep`, `bash`, `write`, `edit`, `move`
+- Tool registration in `cmd/harness/main.go` (lines 44-51)
 - TUI conversation store with Part types in `tui/src/stores/conversation.ts`
 - Input bar with fixed height (3 lines) in `tui/src/components/InputBar.tsx`
 - Header asset exists at `tui/assets/heading.md`
@@ -24,46 +24,46 @@ This plan covers the implementation of features from commits 756e1e7 and 50cb96d
 
 ## Acceptance Criteria
 
-### Bash Tool (`specs/tools/bash.md`)
-- [ ] Execute commands using `/bin/bash -c "<command>"`
-- [ ] Capture stdout and stderr separately
-- [ ] Return exit code with output
-- [ ] 30-second timeout with process termination
-- [ ] 1 MB output limits with truncation ("... (truncated)" suffix)
-- [ ] Return error for: empty command, timeout, spawn failure
-- [ ] Commands execute in harness working directory
-- [ ] Inherit harness process environment
+### Bash Tool (`specs/tools/bash.md`) ✅ COMPLETE
+- [x] Execute commands using `/bin/bash -c "<command>"`
+- [x] Capture stdout and stderr separately
+- [x] Return exit code with output
+- [x] 30-second timeout with process termination
+- [x] 1 MB output limits with truncation ("... (truncated)" suffix)
+- [x] Return error for: empty command, timeout, spawn failure
+- [x] Commands execute in harness working directory
+- [x] Inherit harness process environment
 
-### Write Tool (`specs/tools/write.md`)
-- [ ] Write content to file (overwrite mode by default)
-- [ ] Support append mode via `mode` parameter
-- [ ] Create parent directories recursively (0755)
-- [ ] Atomic writes (temp file + rename)
-- [ ] New files created with 0644 permissions
-- [ ] Existing file permissions preserved
-- [ ] Return bytesWritten and absolute path
-- [ ] Return error for: empty path, path is directory, permission denied, disk full
+### Write Tool (`specs/tools/write.md`) ✅ COMPLETE
+- [x] Write content to file (overwrite mode by default)
+- [x] Support append mode via `mode` parameter
+- [x] Create parent directories recursively (0755)
+- [x] Atomic writes (temp file + rename)
+- [x] New files created with 0644 permissions
+- [x] Existing file permissions preserved
+- [x] Return bytesWritten and absolute path
+- [x] Return error for: empty path, path is directory, permission denied, disk full
 
-### Edit Tool (`specs/tools/edit.md`)
-- [ ] Support three operations: replace, insert, delete
-- [ ] 1-indexed line numbers, inclusive ranges
-- [ ] `afterLine: 0` inserts at beginning of file
-- [ ] Process operations in reverse line order to preserve validity
-- [ ] Validate all operations before applying any
-- [ ] Detect and reject overlapping operations
-- [ ] Atomic file writes (temp file + rename)
-- [ ] Return path, linesChanged, newLineCount
-- [ ] Return errors for: file not found, directory, permission denied, invalid line numbers, overlapping operations
+### Edit Tool (`specs/tools/edit.md`) ✅ COMPLETE
+- [x] Support three operations: replace, insert, delete
+- [x] 1-indexed line numbers, inclusive ranges
+- [x] `afterLine: 0` inserts at beginning of file
+- [x] Process operations in reverse line order to preserve validity
+- [x] Validate all operations before applying any
+- [x] Detect and reject overlapping operations
+- [x] Atomic file writes (temp file + rename)
+- [x] Return path, linesChanged, newLineCount
+- [x] Return errors for: file not found, directory, permission denied, invalid line numbers, overlapping operations
 
-### Move Tool (`specs/tools/move.md`)
-- [ ] Rename files (same directory)
-- [ ] Move files to different directory
-- [ ] Move into existing directory (preserve filename)
-- [ ] Create parent directories if needed (0755)
-- [ ] Handle cross-filesystem moves (copy + delete)
-- [ ] Overwrite existing files, error on non-empty directories
-- [ ] Prevent moving directory into itself
-- [ ] Return source and destination absolute paths
+### Move Tool (`specs/tools/move.md`) ✅ COMPLETE
+- [x] Rename files (same directory)
+- [x] Move files to different directory
+- [x] Move into existing directory (preserve filename)
+- [x] Create parent directories if needed (0755)
+- [x] Handle cross-filesystem moves (copy + delete)
+- [x] Overwrite existing files, error on non-empty directories
+- [x] Prevent moving directory into itself
+- [x] Return source and destination absolute paths
 
 ### Header Display (`specs/header.md`)
 - [ ] Load header from `tui/assets/heading.md` at startup
@@ -484,4 +484,7 @@ Manual verification:
 
 ## Logs
 
-(Implementation log entries will be added here as work progresses)
+### 2026-02-01: Backend Tools Complete
+- **Errors:** None
+- **All Tests Pass:** Yes
+- **Notes:** Implemented all four backend tools (bash, write, edit, move) with comprehensive test coverage. All tools registered in main.go. Remaining work: TUI header display and input growth features.

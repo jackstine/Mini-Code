@@ -45,6 +45,10 @@ func main() {
 		tool.NewReadTool(),
 		tool.NewListDirTool(),
 		tool.NewGrepTool(),
+		tool.NewBashTool(),
+		tool.NewWriteTool(),
+		tool.NewEditTool(),
+		tool.NewMoveTool(),
 	}
 
 	// Create harness with nil handler initially
@@ -75,12 +79,12 @@ func main() {
 	logger.Info("harness", "Server configured",
 		log.F("addr", addr),
 		log.F("model", config.Model),
-		log.F("tools", "read,list_dir,grep"),
+		log.F("tools", "read,list_dir,grep,bash,write,edit,move"),
 	)
 
 	fmt.Printf("Harness server starting on %s\n", addr)
 	fmt.Printf("Model: %s\n", config.Model)
-	fmt.Printf("Tools: read, list_dir, grep\n")
+	fmt.Printf("Tools: read, list_dir, grep, bash, write, edit, move\n")
 
 	if err := srv.ListenAndServe(); err != nil {
 		logger.Error("harness", "Server error", log.F("error", err.Error()))

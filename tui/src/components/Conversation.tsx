@@ -26,16 +26,20 @@ export const Conversation: Component = () => {
   })
 
   return (
-    <scrollbox
-      ref={scrollboxRef}
+    <box
       width="100%"
       flexGrow={1}
-      stickyScroll={true}
       borderStyle="single"
       borderColor={theme.colors.border}
       padding={1}
     >
-    <box flexDirection="column">
+      <scrollbox
+        ref={scrollboxRef}
+        width="100%"
+        height="100%"
+        stickyScroll={true}
+      >
+        <box flexDirection="column">
       <For each={parts}>
         {(part) => (
           <Switch>
@@ -61,7 +65,8 @@ export const Conversation: Component = () => {
           </Switch>
         )}
       </For>
+        </box>
+      </scrollbox>
     </box>
-    </scrollbox>
   )
 }
