@@ -13,10 +13,12 @@ This plan covers the implementation of features from commits 756e1e7 and 50cb96d
 ### Existing Infrastructure
 - Tool interface defined in `pkg/tool/tool.go`
 - Three tools implemented: `read`, `list_dir`, `grep`
-- Tool registration in `cmd/harness/main.go` (line 44-48)
+- Tool registration in `cmd/harness/main.go` (lines 44-48)
 - TUI conversation store with Part types in `tui/src/stores/conversation.ts`
 - Input bar with fixed height (3 lines) in `tui/src/components/InputBar.tsx`
 - Header asset exists at `tui/assets/heading.md`
+- OpenTUI framework with box, input, text, scrollbox components
+- Markdown rendering library in `tui/src/lib/markdown.tsx`
 
 ---
 
@@ -340,7 +342,7 @@ onMount(async () => {
         type: "header",
         content,
         timestamp: Date.now()
-      })))
+      }))
     }
   } catch (e) {
     console.warn("Failed to load header:", e)
