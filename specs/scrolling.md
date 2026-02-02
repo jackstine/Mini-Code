@@ -60,12 +60,14 @@ Protected elements include:
 
 | Key | Action | Focus Change |
 |-----|--------|--------------|
-| PageUp | Scroll up one viewport | None |
-| PageDown | Scroll down one viewport | None |
+| PageUp | Scroll up 10 viewports | None |
+| PageDown | Scroll down 10 viewports | None |
 | Home | Scroll to top | None |
 | End | Scroll to bottom | None |
 
 All scroll keys operate on the conversation scrollbox without affecting input focus.
+
+**Scroll Speed:** PageUp/PageDown scroll 10 viewports per keypress for fast navigation through long conversations.
 
 ### Auto-Scroll
 
@@ -78,6 +80,15 @@ The conversation auto-scrolls to show new content:
 | User returns to bottom | Auto-scroll resumes |
 
 **Bottom detection:** User is considered "at bottom" when scroll position is within a small threshold (e.g., 10 pixels) of the maximum scroll position.
+
+### Message Submission Scroll Behavior
+
+When the user submits a message:
+1. Message is immediately added to the conversation
+2. **Viewport automatically scrolls to bottom** to show the newly submitted message
+3. This ensures the user always sees their message and the agent's response without manual scrolling
+
+This behavior is **immediate** and happens synchronously with message submission, before the agent responds.
 
 ### Scroll Position Preservation
 

@@ -21,22 +21,22 @@ export function setScrollbox(ref: any) {
 }
 
 /**
- * Scroll up by one viewport (PageUp).
+ * Scroll up by 10 viewports (PageUp).
  */
 export function scrollPageUp() {
   const scrollbox = scrollboxRef()
   if (scrollbox) {
-    scrollbox.scrollBy(-1, "viewport")
+    scrollbox.scrollBy(-10, "viewport")
   }
 }
 
 /**
- * Scroll down by one viewport (PageDown).
+ * Scroll down by 10 viewports (PageDown).
  */
 export function scrollPageDown() {
   const scrollbox = scrollboxRef()
   if (scrollbox) {
-    scrollbox.scrollBy(1, "viewport")
+    scrollbox.scrollBy(10, "viewport")
   }
 }
 
@@ -56,8 +56,8 @@ export function scrollToTop() {
 export function scrollToBottom() {
   const scrollbox = scrollboxRef()
   if (scrollbox) {
-    // Use a large value to scroll to end
-    scrollbox.scrollTo({ y: Infinity })
+    // Use a large numeric value instead of Infinity to avoid rendering issues
+    scrollbox.scrollTo(999999)
   }
 }
 
