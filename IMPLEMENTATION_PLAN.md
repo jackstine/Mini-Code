@@ -1,427 +1,485 @@
-# Implementation Plan: Logging Specification
+# Implementation Plan: New TUI Features and Tools
 
 ## Overview
 
-This plan covers the implementation of the logging system as defined in `specs/logging.md`. The harness application requires two distinct logging systems:
-
-1. **Server Logging** - Debug harness internals (stderr, controlled by `HARNESS_LOG_LEVEL`)
-2. **Agent Interaction Logging** - View conversation flow (file, controlled by `HARNESS_AGENT_LOG`)
+This plan covers the implementation of features from commits 756e1e7 and 50cb96d:
+- **TUI Features:** Header display, Input box growth
+- **Backend Tools:** Bash, Write, Edit, Move
 
 ## Current State
 
-**Status: IMPLEMENTATION COMPLETE**
+**Status: NOT STARTED**
 
-The logging system is fully implemented:
-- `pkg/log/` - Logger package with config, server logger, agent logger, rotating writer, event handler wrapper
-- `pkg/server/` - HTTP and SSE logging integrated
-- `pkg/harness/` - API, tool, and loop logging integrated
-- `cmd/harness/main.go` - Logging initialization and configuration
+### Existing Infrastructure
+- Tool interface defined in `pkg/tool/tool.go`
+- Three tools implemented: `read`, `list_dir`, `grep`
+- Tool registration in `cmd/harness/main.go` (line 44-48)
+- TUI conversation store with Part types in `tui/src/stores/conversation.ts`
+- Input bar with fixed height (3 lines) in `tui/src/components/InputBar.tsx`
+- Header asset exists at `tui/assets/heading.md`
+
+---
 
 ## Acceptance Criteria
 
-### Server Logging
-- [x] Logs written to stderr with configurable level (DEBUG, INFO, WARN, ERROR)
-- [x] Supports text and JSON output formats via `HARNESS_LOG_FORMAT`
-- [x] Supports category filtering via `HARNESS_LOG_CATEGORIES` (http, sse, api, tool, harness)
-- [x] Default level is INFO when `HARNESS_LOG_LEVEL` is unset
-- [x] Log entries include: timestamp, level, category, message, and key-value fields
-- [x] Sensitive data (API keys, tokens) are never logged or are redacted
-- [x] Level check before expensive formatting operations (performance)
+### Bash Tool (`specs/tools/bash.md`)
+- [ ] Execute commands using `/bin/bash -c "<command>"`
+- [ ] Capture stdout and stderr separately
+- [ ] Return exit code with output
+- [ ] 30-second timeout with process termination
+- [ ] 1 MB output limits with truncation ("... (truncated)" suffix)
+- [ ] Return error for: empty command, timeout, spawn failure
+- [ ] Commands execute in harness working directory
+- [ ] Inherit harness process environment
 
-### Agent Interaction Logging
-- [x] Logs written to file specified by `HARNESS_AGENT_LOG` (disabled if unset)
-- [x] Supports text and JSON output formats via `HARNESS_AGENT_LOG_FORMAT`
-- [x] Captures: user prompts, assistant responses, tool calls with inputs, tool results
-- [x] Text format uses human-readable separator blocks (`=== TIMESTAMP TYPE ===`)
-- [x] JSON format uses NDJSON (one JSON object per line)
-- [x] File rotation: 10MB max size, 5 max files, timestamp suffix on rotated files
+### Write Tool (`specs/tools/write.md`)
+- [ ] Write content to file (overwrite mode by default)
+- [ ] Support append mode via `mode` parameter
+- [ ] Create parent directories recursively (0755)
+- [ ] Atomic writes (temp file + rename)
+- [ ] New files created with 0644 permissions
+- [ ] Existing file permissions preserved
+- [ ] Return bytesWritten and absolute path
+- [ ] Return error for: empty path, path is directory, permission denied, disk full
 
-### Integration Points
-- [x] HTTP requests logged with method, path, status, duration
-- [x] SSE client connect/disconnect logged with client_id
-- [x] API requests logged with model, message count, token counts, duration
-- [x] Tool execution logged with tool name, id, duration, success/failure
-- [x] Agent loop logged with turn count, total duration
+### Edit Tool (`specs/tools/edit.md`)
+- [ ] Support three operations: replace, insert, delete
+- [ ] 1-indexed line numbers, inclusive ranges
+- [ ] `afterLine: 0` inserts at beginning of file
+- [ ] Process operations in reverse line order to preserve validity
+- [ ] Validate all operations before applying any
+- [ ] Detect and reject overlapping operations
+- [ ] Atomic file writes (temp file + rename)
+- [ ] Return path, linesChanged, newLineCount
+- [ ] Return errors for: file not found, directory, permission denied, invalid line numbers, overlapping operations
+
+### Move Tool (`specs/tools/move.md`)
+- [ ] Rename files (same directory)
+- [ ] Move files to different directory
+- [ ] Move into existing directory (preserve filename)
+- [ ] Create parent directories if needed (0755)
+- [ ] Handle cross-filesystem moves (copy + delete)
+- [ ] Overwrite existing files, error on non-empty directories
+- [ ] Prevent moving directory into itself
+- [ ] Return source and destination absolute paths
+
+### Header Display (`specs/header.md`)
+- [ ] Load header from `tui/assets/heading.md` at startup
+- [ ] Display as first item in conversation (before any messages)
+- [ ] Apply blue color to entire header block
+- [ ] Preserve all whitespace and line breaks
+- [ ] One blank line below header before first message
+- [ ] Show only once per session (at startup)
+- [ ] Skip display if file missing or empty (log warning)
+
+### Input Growth (`specs/input-growth.md`)
+- [ ] Minimum height: 1 line
+- [ ] Maximum height: 10 lines
+- [ ] Grow when text wraps to new line
+- [ ] Shrink when content fits in fewer lines
+- [ ] Enable scroll within input when max height exceeded
+- [ ] Keep cursor visible at all times
+- [ ] Recalculate on: text input, deletion, terminal resize, paste
+- [ ] Conversation area shrinks to accommodate larger input
 
 ---
 
 ## Implementation Items
 
-### 1. Create Logger Package (`pkg/log/`)
+### 1. Create Bash Tool (`pkg/tool/bash.go`)
 
-**Priority: HIGH** - Foundation for all other logging work
+**Priority: HIGH** - Most commonly needed tool for agent operations
 
-**Why:** Provides the core logging infrastructure that all other components depend on. Without this, no logging can be added anywhere in the application.
+**Why:** Enables the agent to execute arbitrary commands, essential for git operations, building projects, running tests, and system exploration.
 
 **Files to create:**
-- `pkg/log/logger.go` - Logger interface and server logger implementation
-- `pkg/log/agent.go` - Agent interaction logger implementation
-- `pkg/log/config.go` - Configuration parsing from environment variables
-- `pkg/log/format.go` - Text and JSON formatters
-- `pkg/log/rotate.go` - File rotation for agent logs
+- `pkg/tool/bash.go`
+- `pkg/tool/bash_test.go`
+
+**Implementation details:**
+```go
+type BashTool struct{}
+
+type bashInput struct {
+    Command string `json:"command"`
+}
+
+type bashOutput struct {
+    Stdout   string `json:"stdout"`
+    Stderr   string `json:"stderr"`
+    ExitCode int    `json:"exitCode"`
+}
+```
+
+**Key behaviors:**
+- Use `exec.CommandContext` with 30-second timeout
+- Create cmd with `/bin/bash -c` and the command string
+- Capture stdout/stderr with separate buffers
+- Check output sizes, truncate at 1MB with "... (truncated)" suffix
+- Return exit code from `cmd.ProcessState.ExitCode()`
+
+**Tests to add:**
+- Execute simple command (echo)
+- Capture stderr (ls nonexistent)
+- Return correct exit code on failure
+- Timeout handling (sleep command)
+- Output truncation at 1MB limit
+- Empty command error
+- Context cancellation
+
+---
+
+### 2. Create Write Tool (`pkg/tool/write.go`)
+
+**Priority: HIGH** - Required for file creation and modification
+
+**Why:** Enables the agent to create new files and modify existing ones. Foundation for code generation tasks.
+
+**Files to create:**
+- `pkg/tool/write.go`
+- `pkg/tool/write_test.go`
+
+**Implementation details:**
+```go
+type WriteTool struct{}
+
+type writeInput struct {
+    Path    string `json:"path"`
+    Content string `json:"content"`
+    Mode    string `json:"mode,omitempty"` // "overwrite" or "append"
+}
+
+type writeOutput struct {
+    BytesWritten int    `json:"bytesWritten"`
+    Path         string `json:"path"`
+}
+```
+
+**Key behaviors:**
+- Resolve relative paths to absolute
+- Create parent directories with `os.MkdirAll(dir, 0755)`
+- Atomic write: create temp file in same directory, write, rename
+- Append mode: open with `os.O_APPEND|os.O_WRONLY`
+- Preserve existing file permissions, use 0644 for new files
+
+**Tests to add:**
+- Create new file
+- Overwrite existing file
+- Append to existing file
+- Create nested directories
+- Preserve file permissions
+- Error on directory path
+- Error on permission denied
+
+---
+
+### 3. Create Edit Tool (`pkg/tool/edit.go`)
+
+**Priority: HIGH** - Essential for precise code modifications
+
+**Why:** Allows the agent to make surgical edits to existing files without rewriting entire content. Critical for refactoring and bug fixes.
+
+**Files to create:**
+- `pkg/tool/edit.go`
+- `pkg/tool/edit_test.go`
+
+**Implementation details:**
+```go
+type EditTool struct{}
+
+type editInput struct {
+    Path       string      `json:"path"`
+    Operations []Operation `json:"operations"`
+}
+
+type Operation struct {
+    Op        string   `json:"op"`        // "replace", "insert", "delete"
+    StartLine int      `json:"startLine,omitempty"`
+    EndLine   int      `json:"endLine,omitempty"`
+    AfterLine int      `json:"afterLine,omitempty"`
+    Content   []string `json:"content,omitempty"`
+}
+
+type editOutput struct {
+    Path         string `json:"path"`
+    LinesChanged int    `json:"linesChanged"`
+    NewLineCount int    `json:"newLineCount"`
+}
+```
+
+**Key behaviors:**
+- Read file into string slice (split by newline)
+- Validate all operations before applying:
+  - Line numbers in range (1-indexed)
+  - startLine <= endLine
+  - No overlapping operations
+- Sort operations by position descending
+- Apply operations using splice pattern (per spec pseudocode)
+- Atomic write with temp file + rename
+
+**Tests to add:**
+- Single line replace
+- Multi-line replace
+- Insert at beginning (afterLine: 0)
+- Insert in middle
+- Delete single line
+- Delete range
+- Multiple non-overlapping operations
+- Overlap detection error
+- Invalid line number error
+- File not found error
+
+---
+
+### 4. Create Move Tool (`pkg/tool/move.go`)
+
+**Priority: MEDIUM** - Useful for refactoring but less frequently needed
+
+**Why:** Enables file reorganization and renaming. Useful for refactoring operations.
+
+**Files to create:**
+- `pkg/tool/move.go`
+- `pkg/tool/move_test.go`
+
+**Implementation details:**
+```go
+type MoveTool struct{}
+
+type moveInput struct {
+    Source      string `json:"source"`
+    Destination string `json:"destination"`
+}
+
+type moveOutput struct {
+    Source      string `json:"source"`
+    Destination string `json:"destination"`
+}
+```
+
+**Key behaviors:**
+- Resolve both paths to absolute
+- Detect if destination is existing directory (move into it)
+- Create parent directories with `os.MkdirAll(dir, 0755)`
+- Attempt `os.Rename` first (same filesystem)
+- Fall back to copy+delete for cross-filesystem
+- Check for self-move (destination inside source directory)
+
+**Tests to add:**
+- Rename file (same directory)
+- Move to different directory
+- Move into existing directory
+- Create parent directories
+- Cross-filesystem move (copy+delete)
+- Error: source not found
+- Error: move directory into itself
+- Error: overwrite non-empty directory
+
+---
+
+### 5. Register New Tools in main.go
+
+**Priority: HIGH** - Required to make tools available
+
+**Why:** Tools must be registered with the harness to be exposed to the AI agent.
+
+**Modify `cmd/harness/main.go`:**
+```go
+// Create tools
+tools := []tool.Tool{
+    tool.NewReadTool(),
+    tool.NewListDirTool(),
+    tool.NewGrepTool(),
+    tool.NewBashTool(),   // Add
+    tool.NewWriteTool(),  // Add
+    tool.NewEditTool(),   // Add
+    tool.NewMoveTool(),   // Add
+}
+```
+
+Update console output to list all tools.
+
+---
+
+### 6. Add Header Part Type to TUI
+
+**Priority: MEDIUM** - Visual enhancement for user experience
+
+**Why:** Provides a branded welcome experience when the application starts.
+
+**Files to modify:**
+- `tui/src/stores/conversation.ts` - Add header type to Part union
+- `tui/src/components/Conversation.tsx` - Add Match case for header
+- `tui/src/components/parts/HeaderPart.tsx` - Create new component
+- `tui/src/App.tsx` - Load header on mount
 
 **Implementation details:**
 
-```go
-// Logger interface (as specified)
-type Logger interface {
-    Debug(category string, message string, fields ...Field)
-    Info(category string, message string, fields ...Field)
-    Warn(category string, message string, fields ...Field)
-    Error(category string, message string, fields ...Field)
-    IsDebugEnabled() bool
-}
+Add to Part type:
+```typescript
+| { type: "header"; content: string; timestamp: number }
+```
 
-type Field struct {
-    Key   string
-    Value any
-}
-
-// AgentLogger interface (as specified)
-type AgentLogger interface {
-    LogUser(content string)
-    LogAssistant(content string)
-    LogToolCall(id, name string, input json.RawMessage)
-    LogToolResult(id string, result string, isError bool)
+Create HeaderPart component:
+```typescript
+export const HeaderPart: Component<{ content: string }> = (props) => {
+  return (
+    <box marginBottom={1}>
+      <text color="blue">{props.content}</text>
+    </box>
+  )
 }
 ```
 
-**Tests to add:**
-- `pkg/log/logger_test.go` - Level filtering, category filtering, format output
-- `pkg/log/agent_test.go` - Event logging, file writing, rotation
-- `pkg/log/config_test.go` - Environment variable parsing, defaults
-
----
-
-### 2. Create Log Configuration Type
-
-**Priority: HIGH** - Required before logger can be initialized
-
-**Why:** Centralizes all logging configuration in one place, making it easy to parse from environment and pass to logger constructors.
-
-**Add to `pkg/log/config.go`:**
-
-```go
-type LogConfig struct {
-    Level      string   // DEBUG, INFO, WARN, ERROR (default: INFO)
-    Format     string   // text, json (default: text)
-    Categories []string // Empty means all
-    Output     io.Writer // Default: os.Stderr
-}
-
-type AgentLogConfig struct {
-    FilePath string // Empty means disabled
-    Format   string // text, json (default: text)
-    MaxSize  int64  // Default: 10MB
-    MaxFiles int    // Default: 5
-}
-
-func LoadFromEnv() (LogConfig, AgentLogConfig)
-```
-
-**Environment variables:**
-- `HARNESS_LOG_LEVEL` → `LogConfig.Level`
-- `HARNESS_LOG_FORMAT` → `LogConfig.Format`
-- `HARNESS_LOG_CATEGORIES` → `LogConfig.Categories` (comma-separated)
-- `HARNESS_AGENT_LOG` → `AgentLogConfig.FilePath`
-- `HARNESS_AGENT_LOG_FORMAT` → `AgentLogConfig.Format`
-
----
-
-### 3. Implement Server Logger
-
-**Priority: HIGH** - Core logging functionality
-
-**Why:** Enables infrastructure debugging without exposing conversation content. Critical for production monitoring and troubleshooting.
-
-**Implementation in `pkg/log/logger.go`:**
-- Thread-safe (mutex-protected writes)
-- Level filtering (skip if below configured level)
-- Category filtering (skip if category not in allowed list)
-- Text format: `TIMESTAMP LEVEL [CATEGORY] MESSAGE key=value...`
-- JSON format: Single-line JSON object with all fields
-
-**Key behaviors:**
-- `IsDebugEnabled()` method for performance optimization
-- Lazy field evaluation pattern for expensive debug logging
-- Write directly to `io.Writer` (default stderr)
-
----
-
-### 4. Implement Agent Interaction Logger
-
-**Priority: HIGH** - Conversation debugging capability
-
-**Why:** Enables debugging of agent behavior by capturing full conversation content. Essential for understanding what the agent did and why.
-
-**Implementation in `pkg/log/agent.go`:**
-- File-based output (configurable path)
-- Thread-safe file writes
-- Text format with clear visual separators
-- JSON format as NDJSON
-
-**Text format example:**
-```
-=== 2024-01-15T10:30:45.123Z USER ===
-What's in the config.json file?
-
-=== 2024-01-15T10:30:46.000Z ASSISTANT ===
-I'll read that file for you.
-
-=== 2024-01-15T10:30:46.010Z TOOL_CALL [read] id=toolu_123 ===
-{"path": "/config.json"}
-
-=== 2024-01-15T10:30:46.025Z TOOL_RESULT [toolu_123] success ===
-port=8080
-host=localhost
-```
-
----
-
-### 5. Implement File Rotation
-
-**Priority: MEDIUM** - Prevents disk space exhaustion
-
-**Why:** Agent logs can grow large over extended sessions. Rotation prevents filling disk and maintains manageable file sizes.
-
-**Implementation in `pkg/log/rotate.go`:**
-- Check file size before each write
-- When size exceeds 10MB:
-  - Close current file
-  - Rename to `{filename}.{timestamp}` format
-  - Delete oldest if more than 5 files exist
-  - Open new file
-
----
-
-### 6. Initialize Loggers in main.go
-
-**Priority: HIGH** - Enables logging throughout application
-
-**Why:** Loggers must be created at startup and passed to components that need them.
-
-**Modify `cmd/harness/main.go`:**
-```go
-// Parse logging configuration
-logConfig, agentLogConfig := log.LoadFromEnv()
-
-// Create server logger
-logger := log.NewLogger(logConfig)
-
-// Create agent logger (may be nil if disabled)
-agentLogger := log.NewAgentLogger(agentLogConfig)
-
-// Pass to harness and server
-```
-
----
-
-### 7. Add HTTP Request Logging
-
-**Priority: MEDIUM** - Track incoming requests
-
-**Why:** Essential for debugging connectivity issues and understanding request patterns.
-
-**Modify `pkg/server/server.go`:**
-- Add logger field to Server struct
-- Log on request received: method, path, content_length
-- Log on response sent: method, path, status, duration_ms
-- Log validation errors at WARN level
-
-**Example output:**
-```
-INFO [http] Request received method=POST path=/prompt content_length=45
-INFO [http] Response sent method=POST path=/prompt status=200 duration_ms=12
-WARN [http] Request validation failed method=POST path=/prompt error="content is required"
-```
-
----
-
-### 8. Add SSE Client Logging
-
-**Priority: MEDIUM** - Track TUI connections
-
-**Why:** Critical for debugging SSE delivery issues and understanding client lifecycle.
-
-**Modify `pkg/server/sse.go`:**
-- Log client connected with client_id, remote_addr
-- Log client disconnected with client_id, duration_s
-- Log events sent at DEBUG level: client_id, event_type, bytes
-- Log heartbeats at DEBUG level
-- Log buffer full (skipped event) at WARN level
-
-**Example output:**
-```
-INFO [sse] Client connected client_id=1 remote_addr=127.0.0.1:54321
-DEBUG [sse] Event sent client_id=1 event_type=text bytes=256
-INFO [sse] Heartbeat sent client_id=1
-INFO [sse] Client disconnected client_id=1 duration_s=120
-```
-
----
-
-### 9. Add API Request Logging
-
-**Priority: MEDIUM** - Track Anthropic API calls
-
-**Why:** Essential for understanding API performance, costs, and debugging API-related issues.
-
-**Modify `pkg/harness/harness.go`:**
-- Log request sent: model, message count, tool count
-- Log response received: input_tokens, output_tokens, duration_ms
-- Log errors: error message, model, retry info
-- Log rate limits at WARN level
-
-**Example output:**
-```
-INFO [api] Request sent model=claude-3-haiku messages=3 tools=3
-INFO [api] Response received input_tokens=150 output_tokens=89 duration_ms=1523
-ERROR [api] Request failed model=claude-3-haiku error="rate_limit_exceeded" retry_after_s=30
-```
-
----
-
-### 10. Add Tool Execution Logging
-
-**Priority: MEDIUM** - Track tool lifecycle
-
-**Why:** Helps debug tool failures and performance issues.
-
-**Modify `pkg/harness/harness.go`:**
-- Log execution started: tool name, id
-- Log execution completed: tool name, id, duration_ms, success
-- Log execution failed: tool name, id, error, duration_ms
-- Log slow execution (>5s) at WARN level
-- Log tool input/output at DEBUG level (truncated)
-
-**Example output:**
-```
-INFO [tool] Execution started tool=read id=toolu_123
-DEBUG [tool] Tool input tool=read id=toolu_123 input={"path":"/config.json"}
-INFO [tool] Execution completed tool=read id=toolu_123 duration_ms=15 success=true
-WARN [tool] Slow execution tool=read id=toolu_123 duration_ms=6500
-```
-
----
-
-### 11. Add Harness Loop Logging
-
-**Priority: MEDIUM** - Track agent loop orchestration
-
-**Why:** Provides high-level visibility into agent execution patterns.
-
-**Modify `pkg/harness/harness.go`:**
-- Log loop started: prompt_length
-- Log turn completed at DEBUG level: turn number, tool_calls count
-- Log loop completed: turns, total_duration_ms
-
-**Example output:**
-```
-INFO [harness] Agent loop started prompt_length=45
-DEBUG [harness] Turn completed turn=1 tool_calls=1
-INFO [harness] Agent loop completed turns=2 total_duration_ms=2700
-```
-
----
-
-### 12. Integrate Agent Logger with EventHandler
-
-**Priority: HIGH** - Enables conversation logging
-
-**Why:** The EventHandler already receives all agent events. Connecting it to the agent logger enables conversation logging with minimal code changes.
-
-**Create wrapper in `pkg/log/event_handler.go`:**
-```go
-// LoggingEventHandler wraps an EventHandler and logs to AgentLogger
-type LoggingEventHandler struct {
-    wrapped     harness.EventHandler
-    agentLogger AgentLogger
-}
-
-func (h *LoggingEventHandler) OnText(text string) {
-    if h.agentLogger != nil {
-        h.agentLogger.LogAssistant(text)
+Load header in App.tsx:
+```typescript
+onMount(async () => {
+  try {
+    const content = await loadHeader()
+    if (content) {
+      setParts(produce(p => p.unshift({
+        type: "header",
+        content,
+        timestamp: Date.now()
+      })))
     }
-    if h.wrapped != nil {
-        h.wrapped.OnText(text)
-    }
-}
-// ... similar for other methods
+  } catch (e) {
+    console.warn("Failed to load header:", e)
+  }
+})
 ```
-
-**Modify `cmd/harness/main.go`:**
-- Wrap the SSE event handler with LoggingEventHandler
-- Log user prompts in HandlePrompt before broadcasting
 
 ---
 
-### 13. Add Sensitive Data Redaction
+### 7. Implement Input Box Growth
 
-**Priority: HIGH** - Security requirement
+**Priority: MEDIUM** - Improves multi-line input experience
 
-**Why:** Prevents accidental exposure of API keys and credentials in logs.
+**Why:** Allows users to compose longer prompts comfortably without the text being obscured.
 
-**Implementation in `pkg/log/redact.go`:**
-- Redact `authorization` header values
-- Redact any field containing "key", "token", "secret", "password"
-- Replace with `***redacted***`
+**Files to modify:**
+- `tui/src/components/InputBar.tsx` - Add dynamic height calculation
+- `tui/src/lib/text.ts` - Add text wrapping utility (if needed)
+
+**Implementation details:**
+
+Add height calculation:
+```typescript
+const MIN_INPUT_HEIGHT = 1
+const MAX_INPUT_HEIGHT = 10
+
+function calculateInputHeight(content: string, width: number): number {
+  if (!content) return MIN_INPUT_HEIGHT
+
+  // Split by newlines first
+  const lines = content.split('\n')
+  let totalLines = 0
+
+  for (const line of lines) {
+    // Calculate wrapped lines for each line
+    const wrappedLines = Math.ceil((line.length || 1) / width)
+    totalLines += wrappedLines
+  }
+
+  return Math.min(Math.max(totalLines, MIN_INPUT_HEIGHT), MAX_INPUT_HEIGHT)
+}
+```
+
+Modify InputBar:
+```typescript
+export const InputBar: Component = () => {
+  const [dimensions, setDimensions] = createSignal({ width: 80 })
+
+  // Calculate height based on content and width
+  const inputHeight = createMemo(() => {
+    const width = dimensions().width - 2 // Account for border
+    return calculateInputHeight(inputText(), width)
+  })
+
+  return (
+    <box
+      width="100%"
+      height={inputHeight() + 2} // +2 for border
+      border={true}
+      onLayout={(e) => setDimensions({ width: e.width })}
+    >
+      {/* ... */}
+    </box>
+  )
+}
+```
+
+**Tests to verify:**
+- Single character: height = 1
+- Full line: height = 1
+- Line wrap triggers: height = 2
+- Multiple newlines: each counts as line
+- Delete reduces height
+- Max height caps at 10
+- Terminal resize recalculates
 
 ---
 
 ## Implementation Order
 
-The items should be implemented in this order to minimize integration issues:
+The items should be implemented in this order based on dependencies and value:
 
-1. **Logger Package Foundation** (Items 1-4)
-   - Config, Logger interface, Server Logger, Agent Logger
+1. **Backend Tools (Items 1-4)**
+   - Bash, Write, Edit, Move tools
+   - Each tool is independent, can be developed in parallel
+   - Tests ensure correct behavior before integration
 
-2. **Application Integration** (Item 6)
-   - Initialize loggers in main.go
+2. **Tool Registration (Item 5)**
+   - Wire up tools in main.go
+   - Verify tools appear in agent tool list
 
-3. **Agent Logging Integration** (Item 12)
-   - Connect agent logger to event handler
+3. **TUI Header Display (Item 6)**
+   - Add header part type
+   - Create component
+   - Load on startup
 
-4. **Server Logging Points** (Items 7-11)
-   - HTTP, SSE, API, Tool, Harness logging
+4. **TUI Input Growth (Item 7)**
+   - Modify InputBar component
+   - Add height calculation
+   - Test resize behavior
 
-5. **Supporting Features** (Items 5, 13)
-   - File rotation, Sensitive data redaction
+---
 
 ## Testing Strategy
 
-Each logging component should have:
-- Unit tests for log level filtering
-- Unit tests for category filtering
-- Unit tests for format output (text and JSON)
-- Integration tests verifying logs appear at correct points
+### Backend Tool Testing
+Each tool should have comprehensive unit tests:
+- Success cases with expected output format
+- Error cases with proper error messages
+- Edge cases (empty input, large output, permissions)
+- Context cancellation handling
+- Timeout behavior (bash tool)
 
-Agent logger tests should:
-- Test file writing and content format
-- Test rotation triggers at size threshold
-- Test max files cleanup
+### TUI Testing
+Manual verification:
+- Header displays on first load
+- Header scrolls with conversation
+- Input grows as text is entered
+- Input shrinks when text deleted
+- Max height respected
+- Scroll works within max-height input
+
+### Integration Testing
+- Agent can successfully use each tool
+- Tool results display correctly in TUI
+- Error responses handled gracefully
+
+---
 
 ## Non-Goals (Out of Scope)
 
-- TUI-side logging (spec is backend-focused)
-- Log aggregation or shipping
-- Log searching/filtering tools
-- Metrics or tracing integration
+- Tool timeout configuration (use 30s default per spec)
+- Tool sandboxing or restrictions (full filesystem access per spec)
+- Binary file support for write tool
+- Input growth animation (spec says "smooth" but OpenTUI may not support)
+- Header customization (use fixed asset file)
 
 ---
 
 ## Logs
 
-### Log Entry - 2026-02-01 - Logger Package Foundation
-- **Errors:** None
-- **All Tests Pass:** Yes
-- **Notes:** Created `pkg/log/` package with Logger, AgentLogger, config, rotating writer, and LoggingEventHandler. All unit tests passing.
-
-### Log Entry - 2026-02-01 - Server and Main Integration
-- **Errors:** None
-- **All Tests Pass:** Yes
-- **Notes:** Integrated logging into `pkg/server/` (HTTP and SSE logging) and `cmd/harness/main.go`. Server now accepts Logger parameter. LoggingEventHandler wraps SSE handler for agent interaction logging. User prompts logged via SetUserPromptLogger callback.
-
-### Log Entry - 2026-02-01 - Harness-level Logging (API, Tool, Loop)
-- **Errors:** None
-- **All Tests Pass:** Yes
-- **Notes:** Added logging to `pkg/harness/harness.go` for API requests/responses, tool execution (start/complete/fail/slow), and agent loop (start/complete/turn). Harness now has SetLogger method. Slow tool execution (>5s) logged as warning.
+(Implementation log entries will be added here as work progresses)
