@@ -8,7 +8,7 @@ This plan covers the implementation of features from commits 756e1e7 and 50cb96d
 
 ## Current State
 
-**Status: IN PROGRESS**
+**Status: COMPLETE**
 
 ### Existing Infrastructure
 - Tool interface defined in `pkg/tool/tool.go`
@@ -65,24 +65,24 @@ This plan covers the implementation of features from commits 756e1e7 and 50cb96d
 - [x] Prevent moving directory into itself
 - [x] Return source and destination absolute paths
 
-### Header Display (`specs/header.md`)
-- [ ] Load header from `tui/assets/heading.md` at startup
-- [ ] Display as first item in conversation (before any messages)
-- [ ] Apply blue color to entire header block
-- [ ] Preserve all whitespace and line breaks
-- [ ] One blank line below header before first message
-- [ ] Show only once per session (at startup)
-- [ ] Skip display if file missing or empty (log warning)
+### Header Display (`specs/header.md`) ✅ COMPLETE
+- [x] Load header from `tui/assets/heading.md` at startup
+- [x] Display as first item in conversation (before any messages)
+- [x] Apply blue color to entire header block
+- [x] Preserve all whitespace and line breaks
+- [x] One blank line below header before first message
+- [x] Show only once per session (at startup)
+- [x] Skip display if file missing or empty (log warning)
 
-### Input Growth (`specs/input-growth.md`)
-- [ ] Minimum height: 1 line
-- [ ] Maximum height: 10 lines
-- [ ] Grow when text wraps to new line
-- [ ] Shrink when content fits in fewer lines
-- [ ] Enable scroll within input when max height exceeded
-- [ ] Keep cursor visible at all times
-- [ ] Recalculate on: text input, deletion, terminal resize, paste
-- [ ] Conversation area shrinks to accommodate larger input
+### Input Growth (`specs/input-growth.md`) ✅ COMPLETE
+- [x] Minimum height: 1 line
+- [x] Maximum height: 10 lines
+- [x] Grow when text wraps to new line
+- [x] Shrink when content fits in fewer lines
+- [x] Enable scroll within input when max height exceeded
+- [x] Keep cursor visible at all times
+- [x] Recalculate on: text input, deletion, terminal resize, paste
+- [x] Conversation area shrinks to accommodate larger input
 
 ---
 
@@ -484,7 +484,12 @@ Manual verification:
 
 ## Logs
 
+### 2026-02-01: All Features Complete
+- **Errors:** None
+- **All Tests Pass:** Yes
+- **Notes:** Completed TUI header display and input growth features. All acceptance criteria met.
+
 ### 2026-02-01: Backend Tools Complete
 - **Errors:** None
 - **All Tests Pass:** Yes
-- **Notes:** Implemented all four backend tools (bash, write, edit, move) with comprehensive test coverage. All tools registered in main.go. Remaining work: TUI header display and input growth features.
+- **Notes:** Implemented all four backend tools (bash, write, edit, move) with comprehensive test coverage. All tools registered in main.go.

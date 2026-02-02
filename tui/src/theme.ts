@@ -14,6 +14,7 @@ export const theme = {
     border: "#444444",
     status: "#FFFF00",
     codeBlockBg: "#3d3a28",
+    header: "#3b82f6",         // Blue for header banner
   },
   attributes: {
     bold: 1,

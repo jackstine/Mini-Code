@@ -6,6 +6,7 @@ import { UserPart } from "./parts/UserPart"
 import { TextPart } from "./parts/TextPart"
 import { ToolPart } from "./parts/ToolPart"
 import { ReasoningPart } from "./parts/ReasoningPart"
+import { HeaderPart } from "./parts/HeaderPart"
 import { theme } from "../theme"
 
 /**
@@ -31,40 +32,41 @@ export const Conversation: Component = () => {
       flexGrow={1}
       borderStyle="single"
       borderColor={theme.colors.border}
-      padding={1}
     >
       <scrollbox
         ref={scrollboxRef}
-        width="100%"
-        height="100%"
         stickyScroll={true}
+        padding={5}
       >
-        <box flexDirection="column">
-      <For each={parts}>
-        {(part) => (
-          <Switch>
-            <Match when={part.type === "user" && part}>
-              {(p) => <UserPart content={p().content} />}
-            </Match>
-            <Match when={part.type === "text" && part}>
-              {(p) => <TextPart content={p().content} />}
-            </Match>
-            <Match when={part.type === "tool" && part}>
-              {(p) => (
-                <ToolPart
-                  name={p().name}
-                  input={p().input}
-                  result={p().result}
-                  isError={p().isError}
-                />
-              )}
-            </Match>
-            <Match when={part.type === "reasoning" && part}>
-              {(p) => <ReasoningPart content={p().content} />}
-            </Match>
-          </Switch>
-        )}
-      </For>
+        <box flexDirection="column" marginLeft={2}>
+          <For each={parts}>
+            {(part) => (
+              <Switch>
+                <Match when={part.type === "header" && part}>
+                  {(p) => <HeaderPart content={p().content} />}
+                </Match>
+                <Match when={part.type === "user" && part}>
+                  {(p) => <UserPart content={p().content} />}
+                </Match>
+                <Match when={part.type === "text" && part}>
+                  {(p) => <TextPart content={p().content} />}
+                </Match>
+                <Match when={part.type === "tool" && part}>
+                  {(p) => (
+                    <ToolPart
+                      name={p().name}
+                      input={p().input}
+                      result={p().result}
+                      isError={p().isError}
+                    />
+                  )}
+                </Match>
+                <Match when={part.type === "reasoning" && part}>
+                  {(p) => <ReasoningPart content={p().content} />}
+                </Match>
+              </Switch>
+            )}
+          </For>
         </box>
       </scrollbox>
     </box>

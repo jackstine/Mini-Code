@@ -5,7 +5,7 @@ import { InputBar } from "./components/InputBar"
 import { Status } from "./components/Status"
 import { Help } from "./components/Help"
 import { createSSEClient } from "./lib/sse"
-import { handleEvent } from "./stores/conversation"
+import { handleEvent, addHeader } from "./stores/conversation"
 import { handleStatusEvent, setRunningTool, setIdle, status } from "./stores/status"
 import { cancelAgent } from "./lib/api"
 import { loadHistory } from "./lib/history"
@@ -57,7 +57,18 @@ export const App = () => {
     updateSelection(text)
   })
 
-  onMount(() => {
+  onMount(async () => {
+    // Load header from assets
+    try {
+      const headerContent = await Bun.file("assets/heading.md").text()
+      if (headerContent && headerContent.trim()) {
+        addHeader(headerContent)
+      }
+    } catch (e) {
+      // Header file missing or unreadable - skip display, log warning
+      console.warn("Failed to load header:", e)
+    }
+
     // Load persisted history
     loadHistory()
 

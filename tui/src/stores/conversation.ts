@@ -6,6 +6,7 @@ import type { Event } from "../schemas/events"
  * Parts are displayed in order and never removed during a session.
  */
 export type Part =
+  | { type: "header"; content: string; timestamp: number }
   | { type: "user"; content: string; timestamp: number }
   | { type: "text"; content: string; timestamp: number }
   | { type: "tool"; id: string; name: string; input: unknown; result: string | null; isError: boolean; timestamp: number }
@@ -80,6 +81,18 @@ export function handleEvent(event: Event) {
  */
 export function clearConversation() {
   setParts([])
+}
+
+/**
+ * Add header as the first item in the conversation.
+ * Called once at application startup.
+ */
+export function addHeader(content: string) {
+  setParts(produce(p => p.unshift({
+    type: "header",
+    content,
+    timestamp: Date.now()
+  })))
 }
 
 export { parts }
