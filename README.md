@@ -7,7 +7,17 @@ A terminal-based AI agent application that enables conversational interaction wi
 - Interactive terminal UI for chatting with Claude
 - Built-in tools: read files, list directories, grep search
 - Real-time streaming responses via Server-Sent Events
+- Conversational interaction with Claude through a Text User Interface (TUI)
+- Built-in tools: read files, list directories, grep search
+- Real-time streaming responses via Server-Sent Events
 - Markdown rendering in the terminal
+- Conversation and prompt history
+- Configurable logging for debugging
+
+## Screenshot
+
+![Mini Code Screenshot](assets/mini-code-screenshot.png)
+
 - Conversation and prompt history
 - Configurable logging for debugging
 
