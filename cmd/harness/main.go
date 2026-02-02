@@ -31,13 +31,16 @@ func main() {
 		stdlog.Fatal("ANTHROPIC_API_KEY environment variable is required")
 	}
 
+	// Load system prompt from file
+	systemPrompt := loadSystemPrompt("prompt/mini-code-system-prompt.md", logger)
+
 	// Configure the harness
 	config := harness.Config{
 		APIKey:       apiKey,
 		Model:        getEnvOrDefault("HARNESS_MODEL", harness.DefaultModel),
 		MaxTokens:    harness.DefaultMaxTokens,
 		MaxTurns:     harness.DefaultMaxTurns,
-		SystemPrompt: getEnvOrDefault("HARNESS_SYSTEM_PROMPT", ""),
+		SystemPrompt: systemPrompt,
 	}
 
 	// Create tools
@@ -97,4 +100,25 @@ func getEnvOrDefault(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// loadSystemPrompt reads the system prompt from a file.
+// Returns empty string if file doesn't exist or can't be read.
+func loadSystemPrompt(filePath string, logger log.Logger) string {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		// Log warning but don't fail - system prompt is optional
+		logger.Warn("harness", "Failed to read system prompt file",
+			log.F("path", filePath),
+			log.F("error", err.Error()),
+		)
+		return ""
+	}
+
+	prompt := string(content)
+	logger.Info("harness", "Loaded system prompt from file",
+		log.F("path", filePath),
+		log.F("size", len(prompt)),
+	)
+	return prompt
 }
